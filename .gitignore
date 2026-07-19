@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Loaded project/study data - never commit real ETAP data
+cache/
+*.sqlite
+*.db
+
+# Local editor/OS clutter
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,4 @@
+flask
+olefile
+pyodbc
+openpyxl

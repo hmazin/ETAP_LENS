@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ETAP Lens</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div id="app">
+    <aside id="sidebar">
+      <div class="brand">
+        <span class="brand-icon">&#9889;</span>
+        <span class="brand-name">ETAP Lens</span>
+      </div>
+
+      <div id="loader-box">
+        <label class="browse-label">Find a project or study file</label>
+        <button id="fs-browse-btn">&#128449; Browse Folders...</button>
+        <button id="browse-btn">&#128193; Browse for single file...</button>
+        <input id="folder-input" type="file" accept=".oti,.mdf,.bak,.sa1s,.sa2s,.lf1s,.ul1s" multiple class="hidden">
+        <div class="browse-hint">"Browse Folders" lets you navigate into subfolders and pick a file, all inside
+          this page. "Browse for single file" opens the normal OS file picker if you already know exactly which
+          file you want. Tip: if you only see/pick the <code>.oti</code> there, hold Ctrl and also click the
+          matching <code>.MDF</code> (or <code>.BAK</code>) in the same folder - the .oti alone has no data.</div>
+        <div id="browse-candidates" class="candidate-box"></div>
+
+        <div class="or-divider">or paste a file or folder path</div>
+        <input id="path-input" type="text" placeholder="G:\...\ETAP Model 24  (a folder works too)" autocomplete="off">
+        <button id="load-btn" class="secondary">Load</button>
+        <div id="path-candidates" class="candidate-box"></div>
+
+        <div id="load-status"></div>
+      </div>
+
+      <div id="recent-projects"></div>
+      <button id="clear-all-btn" class="hidden">Unload all</button>
+
+      <nav id="menu" class="hidden">
+        <div class="menu-section-title">Project</div>
+        <button class="menu-item" data-view="overview">Overview</button>
+        <button class="menu-item" data-view="single-line">Single Line (Bus Explorer)</button>
+
+        <div class="menu-section-title">Equipment</div>
+        <div id="category-menu"></div>
+
+        <div class="menu-section-title">Advanced</div>
+        <button class="menu-item" data-view="all-tables">All Tables (raw)</button>
+      </nav>
+    </aside>
+
+    <main id="content">
+      <div id="welcome">
+        <h1>ETAP Lens</h1>
+        <p>Point this at an ETAP <code>.oti</code>, <code>.mdf</code>, or <code>.bak</code> file on the left to
+           explore everything inside your project - buses, cables, transformers, generators, loads, and
+           protective devices - without needing ETAP installed.</p>
+        <p class="hint">An <code>.oti</code> file only holds a connection pointer; this tool automatically
+           finds and reads the real database (<code>.MDF</code>/<code>.BAK</code>) sitting next to it.</p>
+        <p class="hint">You can also load study result files the same way - pick them directly: short-circuit
+           (<code>.SA1S</code> ANSI duty, <code>.SA2S</code> fault currents) or load flow
+           (<code>.LF1S</code> balanced, <code>.UL1S</code> unbalanced/3-phase).</p>
+        <p class="hint">Paste a <strong>folder</strong> path instead of a file to scan the whole project
+           directory - you'll get a list of everything loadable in it, and pick just the one you want. Or use
+           <strong>Browse Folders</strong> on the left to navigate there visually.</p>
+      </div>
+    </main>
+  </div>
+
+  <div id="fs-modal" class="fs-modal hidden">
+    <div class="fs-modal-box">
+      <div class="fs-modal-header">
+        <span>Browse for a file</span>
+        <button id="fs-modal-close" class="fs-modal-close" title="Close">&times;</button>
+      </div>
+      <div class="fs-quick" id="fs-quick"></div>
+      <div class="fs-breadcrumb-bar">
+        <div class="fs-breadcrumb" id="fs-breadcrumb"></div>
+        <button id="fs-select-folder-btn" class="fs-select-btn" title="Load every recognized file in the current folder">Select This Folder</button>
+      </div>
+      <div class="fs-list" id="fs-list"></div>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
