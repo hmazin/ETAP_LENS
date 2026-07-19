@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/banner.png" alt="ETAP Lens" width="100%">
+</p>
+
 # ETAP Lens
 
 **Browse ETAP project models and study results in your browser — no ETAP license required.**
