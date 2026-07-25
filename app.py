@@ -15,7 +15,7 @@ from flask import Flask, jsonify, render_template, request, send_file
 from werkzeug.utils import secure_filename
 
 from etap_reader import categories as cat_defs
-from etap_reader import browse_fs, folder_scan, locate, project_cache, xlsx_export
+from etap_reader import browse_fs, folder_scan, locate, project_cache, sld_graph, xlsx_export
 
 app = Flask(__name__)
 
@@ -381,6 +381,23 @@ def api_bus_connectivity(project_id, bus_id):
                 })
     conn.close()
     return jsonify({"bus": bus_row, "connections": connections})
+
+
+@app.route("/api/project/<project_id>/sld_graph")
+def api_sld_graph(project_id):
+    """Connectivity graph for the auto-layout Single Line Diagram view -
+    not ETAP's saved canvas (that data isn't accessible), just the same
+    Bus/FromBus/ToBus connectivity as the tabular Single Line Explorer,
+    shaped for the frontend to lay out as a tree."""
+    conn, manifest = _db(project_id)
+    if not conn:
+        return jsonify({"error": "unknown project"}), 404
+    if not _table_exists(conn, "Bus"):
+        conn.close()
+        return jsonify({"error": "This project has no Bus table (only project models have a single line diagram)"}), 400
+    graph = sld_graph.build_graph(conn, _table_exists)
+    conn.close()
+    return jsonify(graph)
 
 
 if __name__ == "__main__":

@@ -250,6 +250,25 @@ CONNECTIVITY_TABLES = {
     "Panel": ["Bus"],
 }
 
+# Symbol classification for the auto-layout Single Line Diagram view.
+BRANCH_SYMBOL_KIND = {
+    "XFMR2": "transformer", "XFMR3": "transformer",
+    "HVCB": "breaker", "LVCB": "breaker", "Recloser": "breaker",
+    "SPSTSwitch": "switch", "SPDTSwitch": "switch", "GroundSwitch": "switch",
+    "Fuse": "switch", "Contactor": "switch",
+    "Cable": "line", "BusDuct": "line", "XLine": "line", "OLH": "line", "Reactor": "line",
+}
+LEAF_SYMBOL_KIND = {
+    "Utility": "source", "SynGen": "source",
+    "WTGEN": "generator", "PVArray": "generator",
+    "StaticLoad": "load", "Lump": "load", "IndMotor": "load", "SynMotor": "load", "Panel": "load",
+    "CAP": "capacitor", "StaticVar": "capacitor",
+}
+# Priority order for picking the diagram's root bus(es): a bus with a Utility
+# tie is the natural "top" of a radial one-line; fall back to SynGen, then
+# to the highest-voltage bus if neither is present.
+SOURCE_TABLES_PRIORITY = ["Utility", "SynGen"]
+
 # Column names promoted to the front of the table for readability. Anything
 # not listed keeps its original (schema) order after these.
 PRIORITY_COLUMNS = [
