@@ -209,10 +209,68 @@ Two distinct patterns in the diff:
 response, but it's convolved with a global view-rescale side effect
 that a single diff can't cleanly separate out.
 
-### Round 3 - planned
+### Round 3 - move one bus within existing bounds
 
-Goal: a change that does **not** grow the diagram's overall bounding box,
-so the suspected auto-fit view scale has no reason to recalculate, giving
-a cleaner, smaller diff isolated to just the changed element.
+Change requested: drag `Bus3` to a new position without growing the
+diagram's overall bounding box (goal: starve the suspected auto-fit
+rescale of a reason to fire, isolating a cleaner diff). The move also
+forced the wire from `Z1` to `Bus3` to take a bent (orthogonal) path
+instead of a straight line, visible in the "after" screenshot.
+
+Result: unlike Round 2, `OLV.Stream` **grew** this time - 22,922 -> 23,018
+bytes (+96). A same-length diff no longer applies; used
+`difflib.SequenceMatcher` (insertion/deletion-aware) instead of a
+positional byte compare.
+
+Three distinct findings:
+
+1. **A clean, isolated 48-byte insertion**, at old-stream offset ~21554
+   (one contiguous new block, confirmed via `SequenceMatcher` opcodes -
+   not scattered). Read as 4-byte little-endian int32 fields, it's a
+   repeating record shape containing plausible coordinate values - `8600`,
+   `14698` (repeated twice), `9400` (repeated three times), `14648` - each
+   preceded by a recurring `9a 00 2d 80` sentinel/tag also present
+   (unchanged) in the *original* stream at a nearby offset. Working read:
+   this is a new **wire waypoint / bend-point record**, added because the
+   `Z1`-to-`Bus3` connector now needs an elbow to reach the relocated bus,
+   consistent with the screenshot. This is the strongest evidence yet for
+   real, decodable per-element geometry in this stream.
+
+2. **A handful of direct, unscaled coordinate-field swaps** near offsets
+   14431-14623 - e.g. one field went `0x55f0` (22000) -> `0x3938` (14648)
+   with no scale artifact, a clean value replacement. `14648` is the exact
+   same value that shows up inside the new waypoint block above, which is
+   a good cross-check: the bus's own bounding-rect field and the new
+   wire-waypoint both agree on a value that plausibly *is* Bus3's new
+   coordinate. Nearby paired fields shifted `22000/9188` -> `15248/8600`,
+   consistent with one clean (X, Y)-style translation, not a rescale.
+
+3. **The Round 2 "×100 paired field" reappeared here too, but at symbol
+   blocks unrelated to Bus3** (e.g. offsets ~3222 and ~10891, far from the
+   edited element) - and this time the diagram's bounding box did **not**
+   grow. That weakens Round 2's "auto-fit rescale on bounding-box growth"
+   theory: if it only fired when content outgrew the view, it shouldn't
+   have changed here. Still unexplained; open possibilities: a
+   print/plot-scale value cached and recomputed on every save regardless
+   of what changed, or some other document-level field unrelated to
+   per-element geometry. **Needs its own isolated test** - see Round 4.
+
+**Conclusion:** two separate phenomena are now distinguishable in this
+stream: (a) real per-element position data (bounding-rect coordinate
+fields, and now wire waypoint records) that updates cleanly and locally
+when you move something, and (b) a mystery globally-duplicated ×100 field
+pair that changes on every save for reasons still unrelated to which
+element moved or whether the canvas grew. (a) is the useful part for a
+future SLD renderer; (b) can probably be ignored once understood, but
+needs to be ruled out as noise rather than assumed.
+
+### Round 4 - planned
+
+Goal: isolate the mystery ×100 field. Re-save the *exact same* project
+with **zero edits** (open, don't touch anything, save) and diff against
+Round 3's end state. If the ×100 field pair still changes with nothing
+edited, it's a save-time-generated value (timestamp/counter/checksum-
+derived), not geometry - and can be crossed off the geometry
+investigation entirely.
 
 _(Fill in result here after the next test.)_
