@@ -110,6 +110,16 @@ This was built and tested on Windows against ETAP 24. A few pieces are Windows-s
 
 Study result file support (`.SA1S`/`.SA2S`/`.LF1S`/`.UL1S`) has no Windows-specific dependencies and should work anywhere Python + Flask run. Cross-platform support for the rest is a good first contribution — see below.
 
+## How ETAP's file formats actually work
+
+ETAP doesn't publish documentation for its file formats, so everything this
+tool knows was determined by directly inspecting real project files. That
+investigation - what's in the `.OTI` vs `.MDF` vs `.LDF`, what each table
+category means, and an in-progress reverse-engineering log for where the
+one-line diagram's actual element positions/sizes are stored - is written
+up in [docs/FILE_FORMAT_NOTES.md](docs/FILE_FORMAT_NOTES.md). Worth
+reading before touching `etap_reader/`.
+
 ## Known limitations
 
 - The "Single Line" view is a connectivity summary built from each element's `FromBus`/`ToBus`/`Bus`/`FromElement`/`ToElement` fields, not a rendering of the actual one-line diagram graphics (bus positions, symbol placement, wire routing). A graphical SLD renderer would be a substantial follow-on project.
