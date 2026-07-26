@@ -440,6 +440,36 @@ SLD renderer is buildable from this data - the pieces (bus/symbol
 position, wire routing, symbol icons) are each individually decodable
 for a simple model like this one.
 
+### Round 8 - blind comparison against real ETAP (renderer prototype vs. ground truth)
+
+Built a standalone parser+renderer script (`render_sld.py`, local
+scratch tool, not committed - see the copyright note above) that: finds
+every `::VERSION::` block, extracts its `.emf` filename if present,
+locates its absolute placement rect, renders the real icon via GDI, and
+composites everything by position. Ran it blind (without seeing ETAP)
+against a file the user changed without telling me first, then compared
+the render to a real ETAP screenshot of the same file. Two results:
+
+1. **Confirmed correct:** overall topology and vertical column alignment
+   (`U1` -> `Bus1` -> `BusDuct1` -> `T1` -> `Bus2` -> `Z1` -> `Bus3`) matched
+   the real diagram exactly, including a subtle detail - `Bus2`'s decoded
+   placement box was the smallest of the three buses, and in the real
+   diagram `Bus2` has no visible bar at all, just a junction dot. Small
+   decoded footprint -> genuinely short bus, self-consistent.
+
+2. **Bug found and fixed:** `Bus1` and `Bus3` decoded to nearly identical
+   X coordinates, which looked like noise at first. The real screenshot
+   showed why it's real data: both buses' **left edges** are genuinely
+   vertically aligned in this diagram (both bars start at about the same
+   X and extend rightward by different amounts). The bus coordinate this
+   parser extracts is the bus's **left endpoint, not its center** - the
+   renderer's placeholder (a short line centered on the point) was wrong;
+   it should start at that point and extend right. Bus bar *length*
+   itself still isn't decoded (see Round 3/6 - it's plausibly tied to the
+   wire-waypoint list rather than the bus's own block), so the renderer
+   still can't draw true-to-scale bus bars, but the anchor point's
+   meaning is now understood correctly.
+
 **Not yet solved / next steps toward a real renderer:**
 - Extracting rects for elements *without* an `.emf` reference (buses,
   drawn presumably as parametric lines rather than icons) - the same
