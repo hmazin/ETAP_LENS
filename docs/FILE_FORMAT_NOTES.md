@@ -264,13 +264,41 @@ element moved or whether the canvas grew. (a) is the useful part for a
 future SLD renderer; (b) can probably be ignored once understood, but
 needs to be ruled out as noise rather than assumed.
 
-### Round 4 - planned
+### Round 4 - zero-edit control
 
-Goal: isolate the mystery ×100 field. Re-save the *exact same* project
-with **zero edits** (open, don't touch anything, save) and diff against
-Round 3's end state. If the ×100 field pair still changes with nothing
-edited, it's a save-time-generated value (timestamp/counter/checksum-
-derived), not geometry - and can be crossed off the geometry
-investigation entirely.
+Goal: isolate the mystery ×100 field from Round 3. Opened the project in
+ETAP, changed nothing, closed it (ETAP appears to write on close even
+without an explicit Save - the file's mtime advanced, same size).
+
+Result: **`OLV.Stream` is byte-for-byte identical to Round 3's end state.
+Zero differing bytes across all 23,018 bytes.**
+
+This rules out the "save-time counter/checksum/timestamp" theory from
+Round 3 outright - if it were noise generated on every write, it would
+have changed here too, and it didn't. Combined with Round 3's finding
+(the ×100 field changed at symbol blocks *unrelated* to the bus that
+moved), the picture is now:
+
+- `OLV.Stream` only changes when the diagram content actually changes -
+  confirmed stable across a real no-op save.
+- Round 3's ×100 field change, even though it touched unrelated symbols,
+  was therefore a genuine *consequence* of that round's edit - not
+  save-time noise, and not (per Round 3's own evidence) simply "the view
+  rescaling because the bounding box grew" either, since Round 3 didn't
+  grow the bounding box. Best current theory: moving one element causes
+  ETAP to recompute some diagram-wide derived value (e.g. a print
+  layout/paper-fit scale, or a dependency graph checksum) for *every*
+  symbol, not just the one that moved - which would explain "changes
+  everywhere" without requiring "changes only when the canvas grows."
+  Still not confirmed either way.
+
+### Round 5 - planned
+
+Goal: pin down whether the ×100 field is a per-symbol recompute-on-any-
+edit value, or something else. Move a *different*, unrelated bus a small
+amount (not `Bus3`) and check: (a) does the ×100 field change again at
+yet more symbols, confirming "any edit touches every symbol's copy of
+this field," and (b) does the moved bus's own bounding-rect field update
+the same clean, unscaled way Bus3's did in Round 3.
 
 _(Fill in result here after the next test.)_
