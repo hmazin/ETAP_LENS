@@ -438,6 +438,42 @@ element label placement (ETAP positions these deliberately; the renderer
 just offsets them), and the fact that ETAP stores no connector spanning
 an in-line symbol itself, so short gaps have to be closed heuristically.
 
+### Equipment ratings - and a units trap worth knowing about
+
+Nameplate ratings live in each element's own table, keyed by `IID`/`ID`,
+and are what ETAP renders in the databox next to each symbol:
+
+| Element | Table.Column | Displayed as |
+|---|---|---|
+| Utility | `Utility.ThreePhase`, `.KV` | MVAsc, kV |
+| Bus | `Bus.NominalkV` | kV |
+| 2-winding transformer | `XFMR2.AnsiMVA`, `.PrimkV`, `.SeckV` | MVA, kV/kV |
+| Synchronous motor/generator | `SynMotor.HP`, `.KV` | HP, kV |
+| Static load | `StaticLoad.KVA`, `.KV` | MVA, kV |
+| Bus duct | `BusDuct.ContinuousAmp` | A |
+
+**The trap: several columns named `...MVA` actually hold kVA.** Reading
+them at face value overstates equipment by 1000x. `XFMR2.AnsiMVA` reads
+`1000` for a 1 MVA transformer; `Utility.ThreePhase` reads `250000` for a
+250 MVAsc source.
+
+Don't take that on faith - ETAP stores derived values alongside, so every
+rating can be checked against physics rather than assumed:
+
+- `T1`: 1000 kVA at `PrimkV` 25 -> 23.09 A, matching the stored
+  `PrimFLA` exactly (1000 *MVA* would imply 23,094 A). Same for
+  `SecFLA` at 0.6 kV -> 962.25 A.
+- `U1`: 250,000 kVA at 25 kV -> 5.7735 kA, matching stored `kAsc3p`.
+- `Load1`: 300 kVA at 0.6 kV -> 288.7 A, matching stored `Amps`.
+- `Syn1`: 100 HP through the stored PF (92.04%) and efficiency (82.01%)
+  -> 98.8 kVA, matching the stored `MVA` column - which is therefore also
+  kVA, not MVA.
+
+Two elements legitimately show no rating: a bus duct with
+`ContinuousAmp = 0` (simply unset), and `Impedance`, whose only
+size-like column is `MVAbase` - an impedance base, not a nameplate
+rating. ETAP doesn't label impedance elements either.
+
 ### Round 7 - locating each symbol's absolute placement rect (no ETAP edit, pure parsing)
 
 Instead of another edit/diff round, parsed the Round 6 stream directly to
