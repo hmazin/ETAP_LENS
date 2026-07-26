@@ -382,4 +382,79 @@ block each waypoint list "belongs" to (i.e. how the file associates a
 waypoint run with a specific wire/connector rather than just floating in
 the stream).
 
-_(Fill in result here after the next test.)_
+### Round 7 - locating each symbol's absolute placement rect (no ETAP edit, pure parsing)
+
+Instead of another edit/diff round, parsed the Round 6 stream directly to
+find, for each placed symbol, its **absolute canvas bounding rect** (not
+just the local/template one centered on the origin from earlier rounds).
+
+Method: find each `.emf` filename's exact byte offset (as a UTF-16LE
+string - earlier ASCII-only searches had missed these because the
+correct decode is UTF-16LE, not byte-pattern matching; re-decoding the
+*whole* stream with `.decode('utf-16le', errors='ignore')` and running
+text regexes on the result is the reliable way to find any string in
+this format, including the real 202-bus project's stream which does
+contain plenty of `.emf` references once decoded correctly). Right after
+each filename: a local rect `(-300,-300,300,300)` (a 600x600
+template-space box, same for every symbol), then - after a few
+intervening fields (a 2-byte tag, some zeros) - a second 4×int32-LE rect
+with realistic canvas-scale values.
+
+Result for this test model's four `.emf`-referenced elements:
+
+| Element | `.emf` file | Absolute rect (canvas units) |
+|---|---|---|
+| `BusDuct1` | `abusduct3.emf` | `(21950, 5550) - (22050, 5650)` |
+| `T1` | `axform23.emf` | `(21950, 7150) - (22050, 7250)` |
+| `Z1` | `aimp3.emf` | `(20150, 8550) - (20250, 8650)` |
+| `Load1` | `astat3.emf` | not cleanly isolated - see below |
+
+Cross-checks that make these trustworthy, not just plausible-looking
+numbers: `BusDuct1`'s rect is the *exact* `(21950, 5550, 22050, 5650)`
+example already documented earlier (independently found in the real
+202-bus project) - same values, same "clean 100x100 box" shape.
+`Z1`'s Y value (`8600` center) matches the value independently decoded
+from the wire-waypoint diffs in Rounds 5-6. And the relative layout is
+right: `BusDuct1` and `T1` share the same X (22000) and are stacked
+vertically, exactly matching the screenshot where BusDuct1 sits directly
+above T1 on the Bus1-to-Bus2 chain; `Z1` sits left and below, matching
+its post-move position.
+
+`Load1` didn't yield a clean isolated rect with the same simple scan -
+its block interleaves what looks like wire-waypoint data (same
+`14648`/`9400`-family values seen in the Z1 waypoint list) with its own
+placement fields, likely because its connecting wire has its own bend(s)
+routed through a similar area. Needs a more careful parse than the
+"first 4 sane-looking int32s after the filename" heuristic used here.
+
+**Proof-of-concept render:** using these three rects, rendered the
+matching `.emf` icons via native Windows GDI (`PlayEnhMetaFile` through
+`ctypes`, no external tools needed - Inkscape/ImageMagick weren't
+available, pywin32's high-level wrappers didn't expose `GetEnhMetaFile`
+so this goes through `gdi32.dll` directly) and composited them at their
+decoded positions. The result visually matches the real diagram's
+topology (BusDuct1 stacked above T1, Z1 offset down-left, wired
+together) using **real decoded position data and real ETAP artwork**,
+not placeholders. This is strong end-to-end validation that a graphical
+SLD renderer is buildable from this data - the pieces (bus/symbol
+position, wire routing, symbol icons) are each individually decodable
+for a simple model like this one.
+
+**Not yet solved / next steps toward a real renderer:**
+- Extracting rects for elements *without* an `.emf` reference (buses,
+  drawn presumably as parametric lines rather than icons) - the same
+  9 `::VERSION::` blocks exist for all 9 elements including buses, but
+  the fixed-offset heuristic that worked for iconed symbols didn't
+  locate a rect for the non-iconed ones in a first pass.
+- A general, robust per-block parser (current method is "guess a filename
+  offset, scan forward for 4 plausible int32s" - works for isolated
+  cases, breaks down when a block's own rect is interleaved with
+  waypoint data, as with `Load1`).
+- The distribution question for symbol icons - **not resolved, and not
+  to be resolved by unilaterally deciding**: the `.emf` files used above
+  are ETAP's own copyrighted artwork (from a local company symbol
+  library, not this project), rendered and composited **locally only**
+  for this test - nothing from that source was committed to the repo.
+  Any real feature needs an explicit decision on where icons come from
+  before it ships (candidates discussed: read from the user's own local
+  ETAP install at runtime, or draw original simplified equivalents).
