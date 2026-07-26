@@ -158,14 +158,22 @@ below for how):
   apparent local/template ones centered on the origin (e.g.
   `(-100,-300,100,300)`, `(-300,-300,300,300)`) which look like a symbol's
   own internal geometry before translation to its canvas position.
-- **Open problem (see Testing Log):** a controlled single-bus length
-  change produced a real, structured diff, but several fields scaled by
-  an exact ×100 factor *identically across every symbol in the file*, not
-  just the one that changed. Working theory: coordinates are stored
-  relative to a view-level auto-fit scale that gets recalculated for the
-  whole diagram whenever content size changes, which convolves "this
-  element's real length" with "the view rescaled because of it." Still
-  being isolated - see the log for the current test plan.
+- **Wire routing is a separate flat list of `(X, Y)` waypoint pairs**,
+  tagged by a recurring `9a 00 2d 80` sentinel, distinct from the
+  per-symbol bounding rects above. Confirmed directly (not just inferred)
+  in Testing Log Rounds 3 and 6: bending a wire inserts a 24-byte
+  coordinate-pair entry into this list, and straightening it removes the
+  exact same entry.
+- **Open problem:** a field pair that scales by an exact ×100 factor
+  keeps showing up at symbol blocks *unrelated* to whatever was actually
+  edited, on every round tested so far except a genuine no-op save
+  (Round 4, where nothing in the stream changed at all). So it's tied to
+  *some* edit happening somewhere, not to which element moved or whether
+  the canvas grew - still not identified. May be a print/paper-fit scale
+  or a dependency/layout checksum recomputed globally on any change. Not
+  yet load-bearing for reading real positions, but worth ruling out
+  before writing a renderer that assumes bounding-rect values are stable
+  across saves.
 
 ## Testing log
 
@@ -328,12 +336,50 @@ independent confirmation that these clustered fields are real, decodable
 per-element position data - just fanned out further than Round 3's more
 isolated case.
 
-### Round 6 - planned
+### Round 6 - move Z1 to remove a bend (confirms the waypoint theory)
 
-Goal: confirm the "connected elements move together" theory directly by
-checking *which* elements' coordinates shifted in Round 5 against which
-elements are actually wired to `Bus2` (once connectivity data is
-available/studied), and/or test moving a genuinely unconnected/isolated
-symbol to see if the diff stays as tightly localized as Round 3's.
+Change requested: move `Z1` closer to `Bus2`, straightening out the wire
+that Round 3 had bent. Confirmed via before/after screenshots.
+
+Result: `OLV.Stream` **shrank** this time - 23,018 -> 22,994 bytes (-24),
+the mirror image of Round 3's +96 growth. An insertion-aware diff located
+almost all of the change as one clean 24-byte deletion at offset ~21614 -
+inside the exact same region Round 3 had inserted into.
+
+Decoding both versions of that region as a flat list of int32 LE values:
+
+- **Round 5 (bent wire):** `14698, 8600, 0, <marker>, 14698, 8600, 14698,
+  9400, 0, <marker>, 14698, 9400, 14648, 9400, 0, 154`
+- **Round 6 (straightened):** `14600, 8600, 0, <marker>, 14600, 8600,
+  14600, 9400, 0, 154`
+
+Round 6 is Round 5's list with one 6-value / 24-byte chunk removed:
+`0, <marker>, 14698, 9400, 14648, 9400` - and those last two values,
+`(14698, 9400)` and `(14648, 9400)`, are **the exact same coordinate pair
+Round 3 originally inserted** when the Z1-to-Bus3 wire first needed a
+bend. The X value that survives in both records also shifted slightly
+across every occurrence (`14698` -> `14600`), matching Z1's small
+horizontal move in the screenshot.
+
+**This confirms the theory directly, not just by inference:** this region
+of `OLV.Stream` is a flat list of `(X, Y)` wire-waypoint coordinate pairs
+(separated/tagged by a recurring `9a 00 2d 80` sentinel), and ETAP
+appends/removes entries from this list as bends are created or removed
+by (re-)routing a connector - Round 3 added one, Round 6 removed the same
+one. Combined with Round 3/5's bounding-rect coordinate findings, the
+practical geometry story is now: **bus/symbol positions live in per-block
+bounding-rect fields, and wire routing lives in this separate waypoint
+list** - both are real, both are decodable at the value level for simple
+cases like this test model.
+
+### Round 7 - planned
+
+Open question before attempting a real renderer: confirm the waypoint
+list's exact record framing (where each entry starts/ends, and what the
+`9a 00 2d 80` marker and the `0`/`154` trailing values mean structurally)
+against a case with more than one bend, and pin down which `.emf` symbol
+block each waypoint list "belongs" to (i.e. how the file associates a
+waypoint run with a specific wire/connector rather than just floating in
+the stream).
 
 _(Fill in result here after the next test.)_
