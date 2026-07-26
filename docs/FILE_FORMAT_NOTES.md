@@ -382,6 +382,62 @@ block each waypoint list "belongs" to (i.e. how the file associates a
 waypoint run with a specific wire/connector rather than just floating in
 the stream).
 
+### Round 9 - the missing link: element tags, bus pins, and wire segments
+
+The renderer up to Round 8 labelled elements by generic *type* (from the
+`.emf` filename) rather than by their real tag. Chasing that gap turned
+out to unlock the rest of the format.
+
+**1. Elements are identified by their database `IID`, stored inline.**
+Each element's `IID` from the SQL tables (e.g. `XFMR2.IID = 2339` for
+`T1`) appears verbatim as a little-endian int32 in `OLV.Stream`, a short
+distance *before* that element's `::VERSION::` block. Resolving each
+block to the nearest preceding `IID` gave a clean 1:1 mapping for all 9
+elements, independently corroborated by symbol type (the block that
+resolved to `U1` is the one holding `autil3.emf`, `T1` -> `axform23.emf`,
+and so on). Filter out prototype rows (`IID < 1000`) and any `IID` whose
+byte pattern occurs more than once, or you get collisions with ordinary
+small integers.
+
+**2. Bus geometry: 50x50 "pin" boxes.** Every point where something
+attaches to a bus is stored as an exactly-50x50 rect. Grouping these by
+their Y gives one row per bus, and the X values give the attachment
+points along it. In the test model this produced Bus1 with 2 pins, Bus2
+with **1**, and Bus3 with 3 - matching the real diagram exactly, where
+Bus2 is drawn as a bare junction dot with no visible bar. True bus bar
+*length* still isn't decoded (ETAP draws the bar wider than its outermost
+pin), so the renderer still pads a fixed amount either side.
+
+**3. Element anchors: 100x100 boxes.** Placed symbols get an
+exactly-100x100 rect. Note these also appear for terminal stubs, so a
+block can contain several - see below for picking the right one.
+
+**4. Wire routing: `0x802b` / `0x802d` records.** A connector is a
+`0x802b` header (bounding box + segment count) followed by one or more
+`0x802d` segment records, each holding `x1,y1,x2,y2` as int32 LE. Every
+segment decoded to a clean orthogonal line landing exactly on element and
+bus-pin coordinates. This is the same structure whose 24-byte record was
+inserted in Round 3 and removed again in Round 6.
+
+**5. The anchor-picking rule (this was the subtle one).** Naively taking
+the first 100x100 box in an element's block puts `U1`, `Syn1`, and
+`Load1` in visibly wrong places, because a block also contains boxes for
+terminal stubs. The rule that works for every element: each block holds a
+**thin (<=2 unit wide) connector bbox** - the element's stem. The element
+sits at whichever end of that stem is **not** on a bus row; if neither end
+is on a bus (an in-line element such as a bus duct or transformer sitting
+between two other things), it sits at the top end. Applying this placed
+all six iconed elements correctly, including `U1` above `Bus1` and
+`Syn1`/`Load1` hanging below `Bus3` in the right left-to-right order.
+
+**Result:** a complete single-line diagram rendered end-to-end from the
+`.MDF` alone - correct topology, real bus bars, real wire routing, real
+ETAP symbols, and real equipment tags - validated against an ETAP
+screenshot of the same model. Remaining known gaps: true bus-bar length,
+element label placement (ETAP positions these deliberately; the renderer
+just offsets them), and the fact that ETAP stores no connector spanning
+an in-line symbol itself, so short gaps have to be closed heuristically.
+
 ### Round 7 - locating each symbol's absolute placement rect (no ETAP edit, pure parsing)
 
 Instead of another edit/diff round, parsed the Round 6 stream directly to
