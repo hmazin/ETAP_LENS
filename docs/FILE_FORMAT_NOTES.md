@@ -292,13 +292,48 @@ moved), the picture is now:
   everywhere" without requiring "changes only when the canvas grows."
   Still not confirmed either way.
 
-### Round 5 - planned
+### Round 5 - move a different, more-connected bus
 
-Goal: pin down whether the ×100 field is a per-symbol recompute-on-any-
-edit value, or something else. Move a *different*, unrelated bus a small
-amount (not `Bus3`) and check: (a) does the ×100 field change again at
-yet more symbols, confirming "any edit touches every symbol's copy of
-this field," and (b) does the moved bus's own bounding-rect field update
-the same clean, unscaled way Bus3's did in Round 3.
+Change requested: move `Bus2` (not `Bus3`) a small amount, save.
+
+Result: same stream length as Round 4's baseline (23,018 bytes, no new
+insertion this time - unlike Round 3, this move didn't need a new wire
+waypoint). But the diff is much bigger and more widespread: 242 bytes
+across 110 separate spans, versus Round 3's one clean 48-byte block.
+
+Findings:
+
+- **The ×100 mystery field changed again** (same offsets as before, ~3222,
+  ~10891, ~13105) - consistent with Round 4's conclusion that it's
+  recomputed on *any* edit, not tied to bounding-box growth or to which
+  element moved.
+- **A cluster of ~12 separate 2-byte coordinate fields, spread across
+  offsets 10537-12929 and 21700-21870, all shifted by a consistent
+  delta** - most by exactly **+450**, a handful by +400, +388, or +501
+  (close variants, likely different field roles - e.g. a rect's left edge
+  vs. right edge vs. a label anchor - rounding slightly differently).
+  Decoded as uint16 LE, e.g. `22001 -> 22401`, `21950 -> 22460`,
+  `20500 -> 20950`, all a consistent rightward/downward shift.
+
+**Read:** unlike Round 3's `Bus3` move (fairly isolated - one element's
+bounding rect plus one new wire bend point), moving `Bus2` shifted a
+*whole cluster* of other symbols' coordinates together, by a near-uniform
+delta. Working theory: `Bus2` is more centrally connected in this test
+topology, and ETAP drags every element directly wired to a moved bus
+along with it (standard one-line-editor behavior), rather than only
+updating the bus itself and letting wires stretch. The slightly-varying
+deltas (450 vs 400 vs 388 vs 501) probably reflect different anchor
+points per field (e.g. rect corners) rather than noise. This is a solid,
+independent confirmation that these clustered fields are real, decodable
+per-element position data - just fanned out further than Round 3's more
+isolated case.
+
+### Round 6 - planned
+
+Goal: confirm the "connected elements move together" theory directly by
+checking *which* elements' coordinates shifted in Round 5 against which
+elements are actually wired to `Bus2` (once connectivity data is
+available/studied), and/or test moving a genuinely unconnected/isolated
+symbol to see if the diff stays as tightly localized as Round 3's.
 
 _(Fill in result here after the next test.)_
