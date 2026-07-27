@@ -438,6 +438,77 @@ element label placement (ETAP positions these deliberately; the renderer
 just offsets them), and the fact that ETAP stores no connector spanning
 an in-line symbol itself, so short gaps have to be closed heuristically.
 
+### Bus bar length - solved
+
+Bus bar extent **is** stored, and this closes the long-standing gap where
+the renderer had to guess bar length from pin spread plus padding.
+
+A bus bar is a box **exactly 100 units tall, vertically centred on the bus
+row**, whose *width is the bar's drawn length*:
+
+```
+(x_left, y-50) - (x_right, y+50)
+```
+
+Confirmed by a controlled edit - one bus resized and a different one moved,
+with nothing else touched:
+
+| Bus | Before | After | Change |
+|---|---|---|---|
+| Bus1 | `19999..25103` (w 5104) | unchanged | - |
+| Bus3 | `20599..26433` (w 5834) | `20599..30350` (w **9751**) | the resize |
+| Bus7 | row `13600`, w 800 | row `14200`, w 800 | the relocation |
+
+Every bus has one, including stubs: a junction-dot bus (drawn as a tiny
+tick, not a bar) has width exactly 100. In the test model Bus2/Bus4/Bus5/
+Bus6 are all 100 wide, matching how ETAP draws them.
+
+Caveat when reading these: ordinary 100x100 **icon anchors** can also sit
+on a bus row and match the "100 tall, centred" test. Take the *widest*
+candidate on the row - a real bar is never narrower than an icon anchor.
+
+### Element anchors: keyed off the symbol filename, and direction depends on type
+
+Earlier rounds located a symbol's placement box by scanning its
+`::VERSION::` block. That is unreliable, because **a block also carries
+neighbouring objects' geometry** - one element's block was found to hold
+another's connector stem, which put a utility source on a transmission
+line's terminal instead of its own position above the feeding bus.
+
+The robust rule keys off the element's own `.emf` filename instead, but
+the direction differs by element class:
+
+- **In-line elements** (breaker, bus duct, transformer, cable, line,
+  reactor): placement box is the first 100x100 rect **after** the
+  filename, within a few hundred bytes.
+- **Leaf elements** (utility, motor, load, capacitor): placement box is
+  the last 100x100 rect **before** the filename, consistently ~1600-2200
+  bytes earlier.
+
+Verified against a real ETAP screenshot for all 13 elements in the test
+model. This single rule replaced several accumulated block-scanning
+heuristics.
+
+### Bus rows: pair blocks to rows in serialization order
+
+Two buses can occupy the **same Y** (side by side on the canvas), so
+keying bus rows by Y alone silently drops one. Picking "the first 50x50
+pin inside the bus's block" fails for the same shared-geometry reason as
+above. ETAP serializes objects in creation order and pin geometry follows
+that order, so pairing the Nth bus block with the Nth distinct bus row is
+both simpler and correct.
+
+### Connector records are NOT identified by a fixed marker byte
+
+An earlier round matched wire segments on a literal `0x802d` tag. That is
+an MFC `CArchive` **class index**, assigned per file in the order classes
+first appear - it was `0x802d` in one save and `0x8075` in the next, and
+wire detection silently returned zero segments. Detect segments
+structurally instead: any 4 consecutive int32 forming an axis-aligned
+segment whose *both* endpoints land on an independently-known bus pin or
+element anchor. That also rejects the look-alike 305-unit-tall text label
+boxes (which are 0 units wide, versus a real connector stem's exactly 1).
+
 ### Equipment ratings - and a units trap worth knowing about
 
 Nameplate ratings live in each element's own table, keyed by `IID`/`ID`,
