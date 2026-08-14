@@ -1,0 +1,20 @@
+.git
+.gitignore
+.claude
+__pycache__
+**/__pycache__
+*.pyc
+
+# Cached project dumps - hundreds of MB of somebody's engineering models, and
+# the container builds its own cache at runtime.
+cache/
+
+docs/
+README.md
+CONTRIBUTING.md
+LICENSE
+requirements.txt
+
+# Desktop-only CLI helpers; they import pyodbc, which the image does not carry.
+read_oti.py
+dump_mdf.py

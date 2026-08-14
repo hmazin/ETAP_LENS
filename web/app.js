@@ -685,8 +685,11 @@ async function refreshRecentProjects() {
 }
 
 function setLoadersDisabled(disabled) {
-  el('#load-btn').disabled = disabled;
-  el('#browse-btn').disabled = disabled;
+  // #load-btn is absent in hosted mode, where loading by path is disabled.
+  ['#load-btn', '#browse-btn'].forEach(sel => {
+    const node = el(sel);
+    if (node) node.disabled = disabled;
+  });
 }
 
 async function pollJob(jobId) {
@@ -987,4 +990,50 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && !el('#fs-modal').classList.contains('hidden')) closeFolderBrowser();
 });
 
+// ---------- Startup ----------
+// Browsing the server's filesystem and loading by absolute path only make
+// sense when the server *is* your machine. A hosted instance refuses both, so
+// hide those controls rather than offering buttons that 403.
+
+async function applyDeployMode() {
+  let cfg;
+  try {
+    cfg = await api('/api/config');
+  } catch {
+    return;  // backend without /api/config - leave the local UI as-is
+  }
+  if (cfg.local_filesystem) return;
+
+  document.body.classList.add('hosted');
+  ['#fs-browse-btn', '#path-input', '#load-btn', '#path-candidates'].forEach(sel => {
+    const node = el(sel);
+    if (node) node.remove();
+  });
+  document.querySelectorAll('.or-divider').forEach(n => n.remove());
+
+  // Project models need SQL Server, which the hosted backend has no way to
+  // reach - so don't offer them in the picker at all.
+  const picker = el('#folder-input');
+  if (picker) picker.accept = '.sa1s,.sa2s,.lf1s,.ul1s,.tu1s';
+
+  const hint = el('.browse-hint');
+  if (hint) {
+    hint.textContent = `Pick an ETAP study result file to upload (up to ${cfg.max_upload_mb} MB). `
+      + 'It is read in a throwaway copy - your original is never modified.';
+  }
+  const welcome = el('#welcome');
+  if (welcome) {
+    welcome.querySelectorAll('p').forEach(p => p.remove());
+    welcome.insertAdjacentHTML('beforeend',
+      '<p>Upload an ETAP study result file to explore everything inside it - bus voltages, '
+      + 'branch loading, losses, and alerts - without needing ETAP installed.</p>'
+      + '<p class="hint">Study result files work here: <code>.SA1S</code> and <code>.SA2S</code> '
+      + '(short circuit), <code>.LF1S</code> and <code>.UL1S</code> (load flow), and '
+      + '<code>.TU1S</code> (time-domain load flow, which also gets an annual AC loss report).</p>'
+      + '<p class="hint">Project models (<code>.oti</code>/<code>.mdf</code>/<code>.bak</code>) are '
+      + 'SQL Server databases and need the desktop version - they cannot be read here.</p>');
+  }
+}
+
+applyDeployMode();
 refreshRecentProjects();

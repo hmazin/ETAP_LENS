@@ -13,7 +13,27 @@ import sqlite3
 import tempfile
 import uuid
 
-import pyodbc
+# Imported lazily: this path needs SQL Server LocalDB, which is Windows-only,
+# so a Linux container serving study result files should not have to carry
+# pyodbc (and the unixODBC headers it builds against) just to start up.
+pyodbc = None
+
+
+def _require_pyodbc():
+    global pyodbc
+    if pyodbc is None:
+        try:
+            import pyodbc as _pyodbc
+        except ImportError as e:
+            raise RuntimeError(
+                "Reading .MDF/.BAK project databases needs pyodbc and a local "
+                "SQL Server instance, which this deployment does not have. "
+                "Study result files (.SA1S/.SA2S/.LF1S/.UL1S/.TU1S) are read "
+                "directly and need neither."
+            ) from e
+        pyodbc = _pyodbc
+    return pyodbc
+
 
 DEFAULT_INSTANCE = "ETAPLocalDB19"
 
@@ -124,7 +144,7 @@ def dump_to_sqlite(kind: str, source_path: str, out_sqlite_path: str,
             f"DRIVER={{ODBC Driver 17 for SQL Server}};"
             f"SERVER=(localdb)\\{instance};DATABASE={db_name};Trusted_Connection=yes;"
         )
-        cnxn = pyodbc.connect(conn_str)
+        cnxn = _require_pyodbc().connect(conn_str)
         cursor = cnxn.cursor()
 
         cursor.execute(

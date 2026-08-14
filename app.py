@@ -6,7 +6,9 @@ Run:
     python app.py
 Then open http://127.0.0.1:5151 in a browser.
 """
+import functools
 import os
+import re
 import sqlite3
 import threading
 import uuid
@@ -14,6 +16,7 @@ import uuid
 from flask import Flask, jsonify, request, send_file, send_from_directory
 from werkzeug.utils import secure_filename
 
+from etap_reader import appconfig
 from etap_reader import categories as cat_defs
 from etap_reader import browse_fs, folder_scan, locate, project_cache, sld_graph, xlsx_export
 
@@ -24,6 +27,41 @@ from etap_reader import browse_fs, folder_scan, locate, project_cache, sld_graph
 WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
 
 app = Flask(__name__, static_folder=WEB_DIR, static_url_path="")
+app.config["MAX_CONTENT_LENGTH"] = appconfig.MAX_UPLOAD_BYTES
+
+# Only needed when the frontend is served from a different origin than the API.
+# Imported lazily so a local install without flask-cors still runs.
+if appconfig.CORS_ORIGINS or appconfig.CORS_ORIGIN_REGEX:
+    from flask_cors import CORS
+
+    _origins = list(appconfig.CORS_ORIGINS)
+    if appconfig.CORS_ORIGIN_REGEX:
+        _origins.append(re.compile(appconfig.CORS_ORIGIN_REGEX))
+    CORS(app, resources={r"/api/*": {"origins": _origins}}, max_age=3600)
+
+
+def local_only(view):
+    """Guard for the filesystem-backed endpoints.
+
+    These read whatever path the caller names. That is exactly what you want
+    when the app runs as you on your own machine, and an unauthenticated
+    directory lister over the server's disk when it doesn't."""
+    @functools.wraps(view)
+    def wrapped(*args, **kwargs):
+        if appconfig.IS_HOSTED:
+            return jsonify({
+                "error": "Reading server paths is disabled on the hosted app. "
+                         "Upload a file instead."
+            }), 403
+        return view(*args, **kwargs)
+    return wrapped
+
+
+@app.errorhandler(413)
+def _payload_too_large(_e):
+    return jsonify({
+        "error": f"That file is larger than the {appconfig.MAX_UPLOAD_MB} MB limit."
+    }), 413
 
 # in-memory progress tracker for the (slow, one-time) load/dump step
 _load_jobs = {}
@@ -73,12 +111,20 @@ def index():
     return send_from_directory(WEB_DIR, "index.html")
 
 
+@app.route("/api/config")
+def api_config():
+    """Lets the frontend render the right UI for how this instance is running.
+    Advisory only - every restriction it describes is enforced server-side."""
+    return jsonify(appconfig.public_config())
+
+
 @app.route("/api/projects")
 def api_projects():
     return jsonify(project_cache.list_projects())
 
 
 @app.route("/api/browse")
+@local_only
 def api_browse():
     path = request.args.get("path", "")
     try:
@@ -88,6 +134,7 @@ def api_browse():
 
 
 @app.route("/api/browse/quick")
+@local_only
 def api_browse_quick():
     return jsonify(browse_fs.quick_locations())
 
@@ -138,6 +185,7 @@ def _start_job(loader_fn):
 
 
 @app.route("/api/load", methods=["POST"])
+@local_only
 def api_load_start():
     data = request.get_json(force=True)
     input_path = data.get("path", "").strip().strip('"')
@@ -417,4 +465,8 @@ def api_sld_graph(project_id):
 
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5151, debug=True, use_reloader=False)
+    # Hosted deployments run this under gunicorn (see Dockerfile), so this
+    # block is the local desktop path. debug is gated on mode regardless -
+    # Werkzeug's debugger is remote code execution if it ever faces a network.
+    app.run(host="127.0.0.1", port=5151,
+            debug=appconfig.IS_LOCAL, use_reloader=False)

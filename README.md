@@ -60,6 +60,31 @@ python app.py
 
 Then open **http://127.0.0.1:5151**. Click **Browse Folders...** to navigate to your ETAP project directory, or paste a path directly. The first load of an `.mdf`/`.bak` takes a minute or two (it copies the database, attaches it, and reads every table); study result files load in a couple of seconds. Results are cached in `cache/` (git-ignored) and reload instantly unless the source file changes.
 
+## Running it hosted
+
+The app has two modes, set by `ETAP_LENS_MODE`. It defaults to **`local`** — the desktop case, where the server is your own machine, so browsing the filesystem and loading a file by absolute path are the whole point.
+
+**`hosted`** is for running it on a server that serves other people. Those same features become an unauthenticated directory lister over the server's disk, so they're switched off and upload becomes the only way in:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `ETAP_LENS_MODE` | `local` | `local` or `hosted` |
+| `ETAP_LENS_MAX_UPLOAD_MB` | `300` | Rejected with a JSON 413 above this |
+| `ETAP_LENS_CORS_ORIGINS` | — | Comma-separated exact origins allowed to call the API |
+| `ETAP_LENS_CORS_ORIGIN_REGEX` | — | For preview deployments with generated hostnames |
+
+In hosted mode `/api/browse`, `/api/browse/quick`, and path-based `/api/load` return 403, and the frontend hides the controls that use them (it reads `/api/config` at startup). Only study result files are supported — `.MDF`/`.BAK` need SQL Server LocalDB, which is Windows-only.
+
+> Anchor `ETAP_LENS_CORS_ORIGIN_REGEX` to your own hostnames. A pattern like `.*\.vercel\.app` would let anybody's app call your API from a visitor's browser.
+
+Build and run the container:
+
+```bash
+docker build -t etap-lens . && docker run -p 8080:8080 -e ETAP_LENS_CORS_ORIGINS=https://your-frontend.example.com etap-lens
+```
+
+The frontend in `web/` is plain static files with no build step, so it can be served by Flask (same origin, nothing to configure) or uploaded to any static host — in which case set `window.ETAP_API_BASE` in `web/config.js` to the backend's URL.
+
 ## Command-line tools
 
 If you just want a quick dump without the browser UI:
