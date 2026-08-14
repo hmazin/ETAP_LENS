@@ -92,6 +92,9 @@ class GcsStorage:
         self._client = gcs.Client()
         self._bucket = self._client.bucket(bucket_name)
         self.bucket_name = bucket_name
+        # Separate, cloud-platform-scoped credentials used only for signing.
+        self._signing_creds = None
+        self._signing_email = None
 
     def _blob(self, key):
         return self._bucket.blob(_safe_key(key))
@@ -120,41 +123,57 @@ class GcsStorage:
         except Exception:
             return False
 
+    @staticmethod
+    def _metadata_email():
+        """The metadata server answers "default" to the credentials object but
+        will give the real address if asked directly."""
+        import urllib.request  # noqa: PLC0415
+
+        req = urllib.request.Request(
+            "http://metadata.google.internal/computeMetadata/v1/instance/"
+            "service-accounts/default/email",
+            headers={"Metadata-Flavor": "Google"})
+        with urllib.request.urlopen(req, timeout=5) as r:
+            return r.read().decode()
+
     def _signing_kwargs(self):
         """Signing a URL needs a private key, and on Cloud Run there isn't one.
 
         The ambient credentials there are compute-engine credentials with no
-        key material, so signing has to go through the IAM signBlob API - which
-        the library will do, but only if handed the service account's own email
-        and a live access token. Without this, generate_signed_url raises
-        "you need a private key to sign credentials" the first time anyone
-        tries to upload, which is a long way from the obvious cause.
+        key material, so signing goes through the IAM signBlob API instead -
+        which the library will do, but only if handed the service account's
+        address and an access token.
 
-        Requires iamcredentials.googleapis.com enabled and the service account
-        holding roles/iam.serviceAccountTokenCreator on itself.
+        The token has to be minted separately. storage.Client() authenticates
+        with storage-only scopes, and reusing that token for the IAM API fails
+        with ACCESS_TOKEN_SCOPE_INSUFFICIENT - a 403 that reads like a missing
+        role and is in fact a missing scope. signBlob needs cloud-platform.
+
+        Also requires iamcredentials.googleapis.com enabled and the service
+        account holding roles/iam.serviceAccountTokenCreator on itself.
         """
-        creds = self._client._credentials
-        # Service-account-key credentials expose .signer; compute-engine ones
-        # do not, and that is the distinction that matters here.
-        if hasattr(creds, "signer"):
+        # Service-account-key credentials expose .signer and can sign locally;
+        # compute-engine ones cannot, and that is the distinction here.
+        if hasattr(self._client._credentials, "signer"):
             return {}
 
+        from google.auth import default as google_default  # noqa: PLC0415
         from google.auth.transport import requests as google_requests  # noqa: PLC0415
 
-        if not getattr(creds, "token", None):
-            creds.refresh(google_requests.Request())
-        email = getattr(creds, "service_account_email", None)
-        if not email or email == "default":
-            # The metadata server reports "default" unless asked properly.
-            import urllib.request  # noqa: PLC0415
+        if self._signing_creds is None:
+            self._signing_creds, _ = google_default(
+                scopes=["https://www.googleapis.com/auth/cloud-platform"])
+        # Tokens last about an hour; refresh only when one has actually gone
+        # stale rather than on every upload.
+        if not self._signing_creds.valid:
+            self._signing_creds.refresh(google_requests.Request())
 
-            req = urllib.request.Request(
-                "http://metadata.google.internal/computeMetadata/v1/instance/"
-                "service-accounts/default/email",
-                headers={"Metadata-Flavor": "Google"})
-            with urllib.request.urlopen(req, timeout=5) as r:
-                email = r.read().decode()
-        return {"service_account_email": email, "access_token": creds.token}
+        email = getattr(self._signing_creds, "service_account_email", None)
+        if not email or email == "default":
+            email = self._signing_email or self._metadata_email()
+        self._signing_email = email
+        return {"service_account_email": email,
+                "access_token": self._signing_creds.token}
 
     def signed_upload_url(self, key, content_type=None, max_bytes=None, expires=900):
         """A V4 signed PUT the browser uses directly.
