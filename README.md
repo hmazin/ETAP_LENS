@@ -79,7 +79,7 @@ python dump_mdf.py "path\to\etapmodel.oti" --out model.sqlite   # full project -
 3. **`etap_reader/project_cache.py`** — caches the resulting `.sqlite` per source file (keyed by path + size + mtime) so repeat loads are instant, and handles unloading.
 4. **`etap_reader/browse_fs.py`** / **`etap_reader/folder_scan.py`** — server-side filesystem browsing, since browsers don't expose real paths from native file pickers and a native "select folder" dialog doesn't show files while browsing.
 5. **`etap_reader/xlsx_export.py`** — formats CSV-shaped data into styled `.xlsx` workbooks for export and the violations report.
-6. **`app.py`** — a Flask API over the cached SQLite file; **`static/app.js`** is a plain-JS single-page frontend with no build step (no npm, no bundler — just open and edit).
+6. **`app.py`** — a Flask API over the cached SQLite file; **`web/`** is a plain-JS single-page frontend with no build step (no npm, no bundler — just open and edit). It contains no server-side templating, so Flask can serve it directly (the local case, same origin as the API) or it can be hosted separately with `web/config.js` pointing at the backend's URL.
 
 ## Project structure
 
@@ -96,9 +96,10 @@ etap_reader/
   browse_fs.py                 in-app folder browser backend
   xlsx_export.py               Excel export formatting
   oti_parser.py                 raw .OTI (OLE compound file) parser
-templates/index.html         page shell
-static/app.js                 frontend logic (tables, search, export, browser modal)
-static/style.css               styling
+web/index.html               page shell (plain HTML - no templating)
+web/app.js                    frontend logic (tables, search, export, browser modal)
+web/style.css                  styling
+web/config.js                  API base URL (empty = same origin)
 read_oti.py, dump_mdf.py         standalone CLI tools
 ```
 

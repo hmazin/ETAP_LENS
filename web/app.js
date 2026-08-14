@@ -76,7 +76,7 @@ function downloadCsv(columns, rows, filename) {
 }
 
 async function downloadXlsx(columns, rows, filename, sheetName) {
-  const res = await fetch('/api/export/xlsx', {
+  const res = await fetch(apiUrl('/api/export/xlsx'), {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ columns, rows, filename, sheet_name: sheetName || filename }),
   });
@@ -361,8 +361,18 @@ function renderDataTable(columns, rows, exportName) {
   return container;
 }
 
+// Set by config.js. Empty = same origin (local desktop app); an absolute URL
+// when the frontend is served separately from the backend.
+const API_BASE = (window.ETAP_API_BASE || '').replace(/\/$/, '');
+
+/** Absolute URL for an API path. Every call to the backend goes through this
+ *  so a split deployment only has to change config.js. */
+function apiUrl(path) {
+  return API_BASE + path;
+}
+
 async function api(path, opts) {
-  const res = await fetch(path, opts);
+  const res = await fetch(apiUrl(path), opts);
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error(body.error || res.statusText);
@@ -457,7 +467,7 @@ async function showOverview() {
       reportBtn.disabled = true;
       status.textContent = 'Generating...';
       try {
-        const res = await fetch(`/api/project/${currentProjectId}/violations_report`);
+        const res = await fetch(apiUrl(`/api/project/${currentProjectId}/violations_report`));
         if (!res.ok) {
           const body = await res.json().catch(() => ({ error: res.statusText }));
           throw new Error(body.error || res.statusText);
@@ -839,7 +849,7 @@ async function uploadAndLoad(file) {
   try {
     const fd = new FormData();
     fd.append('file', file);
-    const res = await fetch('/api/upload', { method: 'POST', body: fd });
+    const res = await fetch(apiUrl('/api/upload'), { method: 'POST', body: fd });
     if (!res.ok) {
       const body = await res.json().catch(() => ({ error: res.statusText }));
       throw new Error(body.error || res.statusText);

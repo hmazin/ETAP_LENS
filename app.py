@@ -11,13 +11,19 @@ import sqlite3
 import threading
 import uuid
 
-from flask import Flask, jsonify, render_template, request, send_file
+from flask import Flask, jsonify, request, send_file, send_from_directory
 from werkzeug.utils import secure_filename
 
 from etap_reader import categories as cat_defs
 from etap_reader import browse_fs, folder_scan, locate, project_cache, sld_graph, xlsx_export
 
-app = Flask(__name__)
+# The frontend is a plain static app (no templating, no build step) so it can
+# be served either from here - the local desktop case, same origin as the API -
+# or uploaded to a static host with the API running elsewhere. In the split
+# case web/config.js is overridden to point at the backend's absolute URL.
+WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
+
+app = Flask(__name__, static_folder=WEB_DIR, static_url_path="")
 
 # in-memory progress tracker for the (slow, one-time) load/dump step
 _load_jobs = {}
@@ -64,7 +70,7 @@ def _table_row_count(conn, table):
 
 @app.route("/")
 def index():
-    return render_template("index.html")
+    return send_from_directory(WEB_DIR, "index.html")
 
 
 @app.route("/api/projects")
