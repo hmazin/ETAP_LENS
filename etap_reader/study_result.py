@@ -8,7 +8,7 @@ browser, etc.) treats it identically.
 import os
 import sqlite3
 
-from . import appconfig, time_domain
+from . import appconfig, time_domain, upload_guard
 
 # extension -> (friendly label, which curated category set in categories.py applies)
 STUDY_EXTENSIONS = {
@@ -80,6 +80,12 @@ def import_study_to_sqlite(source_path: str, out_sqlite_path: str, progress_cb=N
             pass
     finally:
         src.close()
+
+    # File size bounds how much data there can be but not how long working
+    # over it takes, so a public instance puts a wall-clock ceiling on the
+    # import rather than letting one pathological upload hold a worker.
+    if appconfig.IS_HOSTED:
+        upload_guard.deadline_guard(dst, appconfig.DERIVE_TIMEOUT_SECONDS)
 
     report("scanning")
     # Capture the real table list *before* creating _table_index, so the

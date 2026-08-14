@@ -73,8 +73,19 @@ The app has two modes, set by `ETAP_LENS_MODE`. It defaults to **`local`** — t
 | `ETAP_LENS_CORS_ORIGINS` | — | Comma-separated exact origins allowed to call the API |
 | `ETAP_LENS_CORS_ORIGIN_REGEX` | — | For preview deployments with generated hostnames |
 | `ETAP_LENS_LITE_CACHE` | on when hosted | Keep only the summary tables (see below) |
+| `ETAP_LENS_GCS_BUCKET` | — | Object storage for uploads; local disk if unset |
+| `ETAP_LENS_TURNSTILE_SITE_KEY` / `_SECRET_KEY` | — | Bot check on the upload-URL endpoint; off unless both are set |
+| `ETAP_LENS_MAX_UPLOADS_PER_SESSION` | `25` | Per-session ceiling on loaded files |
+| `ETAP_LENS_DERIVE_TIMEOUT` | `300` | Seconds before an import is aborted |
+| `ETAP_LENS_CACHE_TTL_HOURS` | `168` | Age at which idle caches are swept |
 
 In hosted mode `/api/browse`, `/api/browse/quick`, and path-based `/api/load` return 403, and the frontend hides the controls that use them (it reads `/api/config` at startup). Only study result files are supported — `.MDF`/`.BAK` need SQL Server LocalDB, which is Windows-only.
+
+Hosted mode also requires an `X-Session-Id` header on every API call. The browser generates a 128-bit random id and keeps it in `localStorage`; everything cached is namespaced by it, so one visitor's uploads are invisible to another and two people uploading files with the same name don't collide. It's a header rather than a cookie because the frontend and API can be on different origins. Locally there's one user, so no session is required and the cache is shared — the desktop app behaves exactly as it always has.
+
+Uploads are validated before anything opens them: extension allowlist, SQLite magic bytes (an extension is a claim, not evidence), and a schema-readable check. Imports run under a wall-clock deadline, because file size bounds how much data there can be but not how long working over it takes.
+
+**Deploying it for real:** see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 > Anchor `ETAP_LENS_CORS_ORIGIN_REGEX` to your own hostnames. A pattern like `.*\.vercel\.app` would let anybody's app call your API from a visitor's browser.
 

@@ -9,6 +9,7 @@ Then open http://127.0.0.1:5151 in a browser.
 import functools
 import os
 import re
+import shutil
 import sqlite3
 import threading
 import uuid
@@ -18,7 +19,8 @@ from werkzeug.utils import secure_filename
 
 from etap_reader import appconfig
 from etap_reader import categories as cat_defs
-from etap_reader import browse_fs, folder_scan, locate, project_cache, sld_graph, xlsx_export
+from etap_reader import (browse_fs, folder_scan, locate, project_cache, sessions,
+                         sld_graph, storage, turnstile, upload_guard, xlsx_export)
 
 # The frontend is a plain static app (no templating, no build step) so it can
 # be served either from here - the local desktop case, same origin as the API -
@@ -67,6 +69,43 @@ def _payload_too_large(_e):
 _load_jobs = {}
 _load_jobs_lock = threading.Lock()
 
+# Where uploads and derived caches live. GCS when a bucket is configured,
+# otherwise the local cache directory.
+_storage = storage.build(appconfig.GCS_BUCKET,
+                         os.path.join(project_cache.CACHE_DIR, "objects"))
+
+
+def current_session():
+    """(session_id, error_response_or_None) for this request."""
+    sid, err = sessions.from_request(request, appconfig.REQUIRE_SESSION)
+    if err:
+        return None, (jsonify({"error": err}), 400)
+    return sid, None
+
+
+def scoped_session():
+    """The session to filter cache reads by.
+
+    None means "no filtering", which is right for the desktop app - one user,
+    one shared cache, and the behaviour it has always had.
+    """
+    if not appconfig.REQUIRE_SESSION:
+        return None
+    sid, _ = sessions.from_request(request, True)
+    return sid
+
+
+def with_session(view):
+    """Reject requests with a missing or malformed session before they reach
+    anything that reads the cache."""
+    @functools.wraps(view)
+    def wrapped(*args, **kwargs):
+        _, err = current_session()
+        if err:
+            return err
+        return view(*args, **kwargs)
+    return wrapped
+
 # Table payloads are sent to the browser whole and paged client-side, which is
 # fine for model tables (the biggest are a few thousand rows) but not for
 # time-domain results - a year of hourly per-branch data is ~500k rows. Cap the
@@ -88,7 +127,13 @@ def _rows_as_dicts(cur):
 
 
 def _db(project_id):
-    manifest = project_cache.get_manifest(project_id)
+    """Open a project's cache, scoped to the caller's session.
+
+    Every project route goes through here, so this one check is what keeps a
+    hosted instance from serving one visitor's uploads to another. A project
+    id belonging to a different session reads as "unknown project" rather than
+    "forbidden" - there is no reason to confirm it exists."""
+    manifest = project_cache.get_manifest(project_id, scoped_session())
     if not manifest:
         return None, None
     conn = sqlite3.connect(manifest["sqlite_path"])
@@ -119,8 +164,9 @@ def api_config():
 
 
 @app.route("/api/projects")
+@with_session
 def api_projects():
-    return jsonify(project_cache.list_projects())
+    return jsonify(project_cache.list_projects(scoped_session()))
 
 
 @app.route("/api/browse")
@@ -160,12 +206,13 @@ def api_export_xlsx():
                       mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
-def _start_job(loader_fn):
+def _start_job(loader_fn, session_id=None):
     """Run loader_fn(progress_cb) -> manifest on a background thread, tracked
     under a job_id that the frontend polls via /api/load/status/<job_id>."""
     job_id = uuid.uuid4().hex
     with _load_jobs_lock:
-        _load_jobs[job_id] = {"stage": "starting", "current": 0, "total": 0, "done": False, "error": None}
+        _load_jobs[job_id] = {"stage": "starting", "current": 0, "total": 0,
+                              "done": False, "error": None, "_session": session_id}
 
     def progress_cb(stage, current, total):
         with _load_jobs_lock:
@@ -175,7 +222,11 @@ def _start_job(loader_fn):
         try:
             manifest = loader_fn(progress_cb)
             with _load_jobs_lock:
-                _load_jobs[job_id].update(done=True, project_id=manifest["project_id"], manifest=manifest)
+                _load_jobs[job_id].update(
+                    done=True, project_id=manifest["project_id"],
+                    # The stored manifest carries the session id and server
+                    # paths; only the scrubbed view goes back to the client.
+                    manifest=project_cache._public_manifest(manifest))
         except Exception as e:
             with _load_jobs_lock:
                 _load_jobs[job_id].update(done=True, error=str(e))
@@ -207,51 +258,205 @@ def api_load_start():
 
 
 @app.route("/api/project/<project_id>/unload", methods=["DELETE"])
+@with_session
 def api_unload(project_id):
-    removed = project_cache.unload_project(project_id)
+    removed = project_cache.unload_project(project_id, scoped_session())
     return jsonify({"removed": removed})
 
 
 @app.route("/api/projects/clear", methods=["POST"])
+@with_session
 def api_clear_all():
-    count = project_cache.clear_all()
+    count = project_cache.clear_all(scoped_session())
     return jsonify({"cleared": count})
+
+
+def _upload_dir(session_id, filename):
+    """Uploads are namespaced by session. Without that, two people uploading
+    a file called GM.TU1S write to the same path and clobber each other."""
+    stem = os.path.splitext(filename)[0].lower() or "upload"
+    d = os.path.join(project_cache.CACHE_DIR, "uploads",
+                     secure_filename(session_id or sessions.SHARED), secure_filename(stem))
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def _ingest(dest_path, filename, session_id):
+    """Validate an uploaded file and queue the import. Returns a Flask
+    response tuple."""
+    try:
+        upload_guard.validate(
+            dest_path, filename,
+            allowed_extensions=set(appconfig.ACCEPTED_EXTENSIONS))
+    except upload_guard.RejectedUpload as e:
+        shutil.rmtree(os.path.dirname(dest_path), ignore_errors=True)
+        return jsonify({"error": str(e)}), 400
+
+    try:
+        located = locate.locate(dest_path)
+    except ValueError as e:
+        shutil.rmtree(os.path.dirname(dest_path), ignore_errors=True)
+        return jsonify({"error": str(e)}), 400
+    located.note = f"Uploaded ({filename})"
+
+    job_id = _start_job(
+        lambda progress_cb: project_cache.load_located(
+            located, input_path=dest_path, progress_cb=progress_cb,
+            session_id=session_id, display_name=filename, uploaded=True),
+        session_id=session_id)
+    return jsonify({"job_id": job_id})
+
+
+def _quota_exceeded(session_id):
+    if not appconfig.REQUIRE_SESSION:
+        return None
+    n = project_cache.session_upload_count(session_id)
+    if n >= appconfig.MAX_UPLOADS_PER_SESSION:
+        return jsonify({
+            "error": f"You have {n} files loaded, which is the limit. "
+                     f"Unload one before adding another."
+        }), 429
+    return None
 
 
 @app.route("/api/upload", methods=["POST"])
 def api_upload_start():
-    """Accept a database file uploaded from the browser's native folder
-    picker (browsers don't expose real filesystem paths to JS, so this is
-    the only way to let the user 'browse to a folder' and have us read the
-    file it contains)."""
+    """Direct multipart upload.
+
+    Fine locally and for small files. On Cloud Run the request body limit is
+    32 MB, well under a typical study result, which is why the hosted flow
+    uses /api/upload/url and has the browser PUT straight to the bucket."""
+    session_id, err = current_session()
+    if err:
+        return err
+    over = _quota_exceeded(session_id)
+    if over:
+        return over
+
     f = request.files.get("file")
     if not f or not f.filename:
         return jsonify({"error": "no file uploaded"}), 400
 
     filename = secure_filename(f.filename) or "upload"
-    ext = os.path.splitext(filename)[1].lower()
-    upload_dir = os.path.join(project_cache.CACHE_DIR, "uploads", os.path.splitext(filename)[0].lower())
-    os.makedirs(upload_dir, exist_ok=True)
-    dest_path = os.path.join(upload_dir, filename)
+    dest_path = os.path.join(_upload_dir(session_id, filename), filename)
     f.save(dest_path)
+    return _ingest(dest_path, filename, session_id)
+
+
+@app.route("/api/upload/url", methods=["POST"])
+def api_upload_url():
+    """Hand out a one-shot upload URL.
+
+    This is the endpoint Turnstile guards: every URL it returns is permission
+    to write a few hundred MB into the bucket, which is the only part of this
+    app that costs real money to abuse."""
+    session_id, err = current_session()
+    if err:
+        return err
+    over = _quota_exceeded(session_id)
+    if over:
+        return over
+
+    data = request.get_json(silent=True) or {}
+    filename = secure_filename(data.get("filename", "")) or ""
+    if not filename:
+        return jsonify({"error": "filename is required"}), 400
 
     try:
-        located = locate.locate(dest_path)
+        upload_guard.check_extension(filename, set(appconfig.ACCEPTED_EXTENSIONS))
+    except upload_guard.RejectedUpload as e:
+        return jsonify({"error": str(e)}), 400
+
+    if appconfig.TURNSTILE_ENABLED:
+        ok, msg = turnstile.verify(
+            data.get("turnstile_token", ""), appconfig.TURNSTILE_SECRET_KEY,
+            remote_ip=request.headers.get("CF-Connecting-IP") or request.remote_addr)
+        if not ok:
+            return jsonify({"error": msg}), 403
+
+    key = f"uploads/{session_id}/{uuid.uuid4().hex}/{filename}"
+    signed = _storage.signed_upload_url(
+        key, content_type="application/octet-stream",
+        max_bytes=appconfig.MAX_UPLOAD_BYTES)
+    return jsonify({"key": key, "upload": signed,
+                    "max_upload_mb": appconfig.MAX_UPLOAD_MB})
+
+
+@app.route("/api/upload/direct", methods=["PUT"])
+def api_upload_direct():
+    """Receiving end of a LocalStorage 'signed URL'.
+
+    Only reachable when no bucket is configured; with GCS the browser PUTs to
+    Google and this never runs. It exists so the hosted upload flow can be
+    exercised end to end without a cloud account."""
+    if _storage.kind != "local":
+        return jsonify({"error": "Not available with object storage configured."}), 404
+    session_id, err = current_session()
+    if err:
+        return err
+
+    key = request.args.get("key", "")
+    if not key.startswith(f"uploads/{session_id}/"):
+        return jsonify({"error": "Key does not belong to this session."}), 403
+
+    tmp = os.path.join(project_cache.CACHE_DIR, "objects", key.replace("/", os.sep))
+    os.makedirs(os.path.dirname(tmp), exist_ok=True)
+    with open(tmp, "wb") as fh:
+        fh.write(request.get_data())
+    return jsonify({"key": key, "bytes": os.path.getsize(tmp)})
+
+
+@app.route("/api/upload/complete", methods=["POST"])
+def api_upload_complete():
+    """Told that an object is in storage, pull it down and import it."""
+    session_id, err = current_session()
+    if err:
+        return err
+    over = _quota_exceeded(session_id)
+    if over:
+        return over
+
+    data = request.get_json(silent=True) or {}
+    key = data.get("key", "")
+    # A key naming another session's prefix is the whole attack here.
+    if not key.startswith(f"uploads/{session_id}/"):
+        return jsonify({"error": "Key does not belong to this session."}), 403
+    try:
+        if not _storage.exists(key):
+            return jsonify({"error": "Upload not found. Try uploading again."}), 404
+        size = _storage.size(key)
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
-    located.note = f"Uploaded via browser file picker ({filename})"
 
-    job_id = _start_job(lambda progress_cb: project_cache.load_located(located, input_path=dest_path, progress_cb=progress_cb))
-    return jsonify({"job_id": job_id})
+    if size > appconfig.MAX_UPLOAD_BYTES:
+        _storage.delete(key)
+        return jsonify({
+            "error": f"That file is larger than the {appconfig.MAX_UPLOAD_MB} MB limit."
+        }), 413
+
+    filename = secure_filename(os.path.basename(key)) or "upload"
+    dest_path = os.path.join(_upload_dir(session_id, filename), filename)
+    _storage.download_to(key, dest_path)
+    # The source object has served its purpose; keeping it doubles storage for
+    # a file we have already copied out.
+    _storage.delete(key)
+    return _ingest(dest_path, filename, session_id)
 
 
 @app.route("/api/load/status/<job_id>")
 def api_load_status(job_id):
+    session_id, err = current_session()
+    if err:
+        return err
     with _load_jobs_lock:
         job = _load_jobs.get(job_id)
         if not job:
             return jsonify({"error": "unknown job"}), 404
-        return jsonify(job)
+        # Job ids are random, but a job carries a manifest, so ownership is
+        # checked rather than assumed from unguessability.
+        if appconfig.REQUIRE_SESSION and job.get("_session") != session_id:
+            return jsonify({"error": "unknown job"}), 404
+        return jsonify({k: v for k, v in job.items() if not k.startswith("_")})
 
 
 @app.route("/api/project/<project_id>/categories")

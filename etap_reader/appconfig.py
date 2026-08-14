@@ -73,6 +73,57 @@ CORS_ORIGINS = _env_list("ETAP_LENS_CORS_ORIGINS")
 CORS_ORIGIN_REGEX = _env("ETAP_LENS_CORS_ORIGIN_REGEX")
 
 
+# Object storage. Empty bucket name keeps everything on local disk, which is
+# what the desktop app wants and what the tests run against.
+GCS_BUCKET = _env("ETAP_LENS_GCS_BUCKET")
+
+# Sessions only mean something where there is more than one user.
+REQUIRE_SESSION = IS_HOSTED
+
+# Cloudflare Turnstile. Both keys empty disables the check entirely, so a
+# hosted instance can be stood up and tested before bot protection is wired.
+TURNSTILE_SITE_KEY = _env("ETAP_LENS_TURNSTILE_SITE_KEY")
+TURNSTILE_SECRET_KEY = _env("ETAP_LENS_TURNSTILE_SECRET_KEY")
+TURNSTILE_ENABLED = bool(TURNSTILE_SITE_KEY and TURNSTILE_SECRET_KEY)
+
+# Wall-clock ceiling on deriving one file. Bounded file size does not bound
+# query time, so this is what stops a pathological upload holding a worker.
+DERIVE_TIMEOUT_SECONDS = _env_int("ETAP_LENS_DERIVE_TIMEOUT", 300)
+
+# Per-session ceilings. Best-effort: the counters live on the instance's own
+# disk, so they reset when Cloud Run recycles it. The real cost ceiling is the
+# upload size cap, Turnstile, and a max-instances limit on the service.
+MAX_UPLOADS_PER_SESSION = _env_int("ETAP_LENS_MAX_UPLOADS_PER_SESSION", 25)
+
+# How long a derived cache survives with nobody touching it. Bucket lifecycle
+# rules should enforce the same number independently - this only sweeps what
+# this instance can see.
+CACHE_TTL_HOURS = _env_int("ETAP_LENS_CACHE_TTL_HOURS", 24 * 7)
+
+
+def _accepted_extensions():
+    """What the file picker should offer. Hosted instances cannot read project
+    models at all - no SQL Server - so offering them would only set up a
+    failure three steps later."""
+    from . import study_result  # noqa: PLC0415  (circular at module scope)
+
+    study = set(study_result.STUDY_EXTENSIONS)
+    return study if IS_HOSTED else study | {".oti", ".mdf", ".bak"}
+
+
+class _LazyExtensions:
+    """study_result imports appconfig, so this cannot be evaluated at import."""
+
+    def __iter__(self):
+        return iter(_accepted_extensions())
+
+    def __contains__(self, item):
+        return item in _accepted_extensions()
+
+
+ACCEPTED_EXTENSIONS = _LazyExtensions()
+
+
 def public_config():
     """What the frontend needs in order to render the right UI. Deliberately
     small - the server enforces every one of these regardless of what the
@@ -82,4 +133,7 @@ def public_config():
         "local_filesystem": IS_LOCAL,
         "max_upload_mb": MAX_UPLOAD_MB,
         "lite_cache": LITE_CACHE,
+        "require_session": REQUIRE_SESSION,
+        "turnstile_site_key": TURNSTILE_SITE_KEY,  # public by design
+        "accepted_extensions": sorted(ACCEPTED_EXTENSIONS),
     }

@@ -1,0 +1,59 @@
+# Cloud Build -> Artifact Registry -> Cloud Run.
+#
+# Substitutions are set on the trigger; the defaults below are placeholders so
+# a mis-configured trigger fails loudly rather than deploying somewhere odd.
+substitutions:
+  _REGION: us-central1
+  _SERVICE: etap-lens-api
+  _REPO: etap-lens
+  _BUCKET: CHANGE_ME
+  _CORS_ORIGINS: CHANGE_ME
+  _CORS_ORIGIN_REGEX: ''
+
+steps:
+  - id: build
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:$COMMIT_SHA
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:latest
+      - .
+
+  - id: push
+    name: gcr.io/cloud-builders/docker
+    args: [push, --all-tags,
+           '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}']
+
+  - id: deploy
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ${_SERVICE}
+      - --image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:$COMMIT_SHA
+      - --region=${_REGION}
+      - --platform=managed
+      - --allow-unauthenticated          # public tool; abuse is handled in-app
+      - --execution-environment=gen2     # real filesystem for the SQLite cache
+      - --memory=4Gi
+      - --cpu=2
+      - --concurrency=20
+      - --timeout=600
+      - --min-instances=0                # scale to zero: idle costs nothing
+      # One instance on purpose. Load-job progress lives in an in-memory dict,
+      # so a second instance would answer status polls for jobs it has never
+      # heard of. Raising this means moving that state to Firestore first.
+      - --max-instances=1
+      - --set-env-vars=ETAP_LENS_MODE=hosted,ETAP_LENS_GCS_BUCKET=${_BUCKET},ETAP_LENS_CORS_ORIGINS=${_CORS_ORIGINS},ETAP_LENS_CORS_ORIGIN_REGEX=${_CORS_ORIGIN_REGEX}
+      # Turnstile keys are secrets, so they are attached separately:
+      #   gcloud run services update ${_SERVICE} --region ${_REGION} \
+      #     --set-secrets=ETAP_LENS_TURNSTILE_SECRET_KEY=turnstile-secret:latest
+
+images:
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}
+
+options:
+  logging: CLOUD_LOGGING_ONLY

@@ -12,3 +12,4 @@ flask-cors
 olefile
 openpyxl
 gunicorn
+google-cloud-storage

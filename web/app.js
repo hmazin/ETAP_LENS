@@ -1,5 +1,8 @@
 let currentProjectId = null;
 let currentManifest = null;
+// Filled from /api/config at startup; the {} default keeps every read safe if
+// that call fails, in which case the app behaves as the local desktop tool.
+let deployConfig = {};
 
 const el = (sel) => document.querySelector(sel);
 const content = () => el('#content');
@@ -77,7 +80,8 @@ function downloadCsv(columns, rows, filename) {
 
 async function downloadXlsx(columns, rows, filename, sheetName) {
   const res = await fetch(apiUrl('/api/export/xlsx'), {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    method: 'POST',
+    headers: { ...sessionHeaders(), 'Content-Type': 'application/json' },
     body: JSON.stringify({ columns, rows, filename, sheet_name: sheetName || filename }),
   });
   if (!res.ok) {
@@ -371,8 +375,35 @@ function apiUrl(path) {
   return API_BASE + path;
 }
 
-async function api(path, opts) {
-  const res = await fetch(apiUrl(path), opts);
+// Anonymous identity for the hosted app, so one visitor's uploads stay
+// separate from another's. 128 bits from the browser's CSPRNG, kept in
+// localStorage and sent as a header - not a cookie, because the frontend and
+// API can be on different origins and a header sidesteps SameSite entirely.
+const SESSION_KEY = 'etaplens.session';
+
+function sessionId() {
+  let id = null;
+  try {
+    id = localStorage.getItem(SESSION_KEY);
+  } catch { /* private mode - fall through to a per-page-load id */ }
+  if (!id || !/^[a-f0-9]{32,64}$/.test(id)) {
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    id = [...bytes].map(b => b.toString(16).padStart(2, '0')).join('');
+    try { localStorage.setItem(SESSION_KEY, id); } catch { /* ignore */ }
+  }
+  return id;
+}
+
+function sessionHeaders() {
+  return { 'X-Session-Id': sessionId() };
+}
+
+async function api(path, opts = {}) {
+  const res = await fetch(apiUrl(path), {
+    ...opts,
+    headers: { ...sessionHeaders(), ...(opts.headers || {}) },
+  });
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error(body.error || res.statusText);
@@ -479,7 +510,8 @@ async function showOverview() {
       reportBtn.disabled = true;
       status.textContent = 'Generating...';
       try {
-        const res = await fetch(apiUrl(`/api/project/${currentProjectId}/violations_report`));
+        const res = await fetch(apiUrl(`/api/project/${currentProjectId}/violations_report`),
+                                { headers: sessionHeaders() });
         if (!res.ok) {
           const body = await res.json().catch(() => ({ error: res.statusText }));
           throw new Error(body.error || res.statusText);
@@ -861,24 +893,76 @@ el('#folder-input').addEventListener('change', (e) => {
   });
 });
 
+/** Ask for an upload URL, PUT the file to it, then tell the API it landed.
+ *  Used when the API is hosted: a study result is routinely bigger than the
+ *  32 MB a Cloud Run request body allows, so the bytes go straight to object
+ *  storage and never pass through the service. */
+async function uploadViaSignedUrl(file) {
+  const status = el('#load-status');
+
+  status.textContent = 'Preparing upload...';
+  const grant = await api('/api/upload/url', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      filename: file.name,
+      turnstile_token: currentTurnstileToken(),
+    }),
+  });
+
+  status.textContent = `Uploading ${file.name} (${(file.size / 1e6).toFixed(0)} MB)...`;
+  const { url, headers } = grant.upload;
+  const absolute = url.startsWith('http');
+  const put = await fetch(absolute ? url : apiUrl(url), {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/octet-stream',
+      ...(headers || {}),
+      // Only for the local-storage fallback, which PUTs back to this API and
+      // needs to know whose upload this is. A GCS signed URL must be sent
+      // exactly as signed - an extra header invalidates the signature.
+      ...(absolute ? {} : sessionHeaders()),
+    },
+    body: file,
+  });
+  if (!put.ok) throw new Error(`Upload failed (${put.status})`);
+
+  status.textContent = 'Reading file...';
+  const { job_id } = await api('/api/upload/complete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key: grant.key }),
+  });
+  return job_id;
+}
+
+async function uploadDirect(file) {
+  const fd = new FormData();
+  fd.append('file', file);
+  const res = await fetch(apiUrl('/api/upload'), {
+    method: 'POST', headers: sessionHeaders(), body: fd,
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(body.error || res.statusText);
+  }
+  return (await res.json()).job_id;
+}
+
 async function uploadAndLoad(file) {
   setLoadersDisabled(true);
   el('#load-status').textContent = `Uploading ${file.name}...`;
   el('#load-status').className = '';
   try {
-    const fd = new FormData();
-    fd.append('file', file);
-    const res = await fetch(apiUrl('/api/upload'), { method: 'POST', body: fd });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({ error: res.statusText }));
-      throw new Error(body.error || res.statusText);
-    }
-    const { job_id } = await res.json();
-    pollJob(job_id);
+    const jobId = deployConfig.require_session
+      ? await uploadViaSignedUrl(file)
+      : await uploadDirect(file);
+    pollJob(jobId);
   } catch (e) {
     el('#load-status').textContent = 'Error: ' + e.message;
     el('#load-status').className = 'error';
     setLoadersDisabled(false);
+    resetTurnstile();
   }
 }
 
@@ -1011,6 +1095,39 @@ document.addEventListener('keydown', (e) => {
 // sense when the server *is* your machine. A hosted instance refuses both, so
 // hide those controls rather than offering buttons that 403.
 
+// Cloudflare Turnstile, rendered only when the backend says it is configured.
+// It guards the upload-URL endpoint - the one thing here that costs money to
+// abuse - rather than page loads, which are cheap.
+let turnstileWidgetId = null;
+
+function currentTurnstileToken() {
+  if (turnstileWidgetId === null || !window.turnstile) return '';
+  return window.turnstile.getResponse(turnstileWidgetId) || '';
+}
+
+function resetTurnstile() {
+  if (turnstileWidgetId !== null && window.turnstile) {
+    window.turnstile.reset(turnstileWidgetId);
+  }
+}
+
+function mountTurnstile(siteKey) {
+  const host = document.createElement('div');
+  host.id = 'turnstile-host';
+  el('#loader-box').appendChild(host);
+
+  const s = document.createElement('script');
+  s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+  s.async = true;
+  s.defer = true;
+  s.onload = () => {
+    turnstileWidgetId = window.turnstile.render(host, {
+      sitekey: siteKey, size: 'flexible', appearance: 'interaction-only',
+    });
+  };
+  document.head.appendChild(s);
+}
+
 async function applyDeployMode() {
   let cfg;
   try {
@@ -1018,6 +1135,12 @@ async function applyDeployMode() {
   } catch {
     return;  // backend without /api/config - leave the local UI as-is
   }
+  deployConfig = cfg;
+  if (cfg.accepted_extensions?.length) {
+    const picker = el('#folder-input');
+    if (picker) picker.accept = cfg.accepted_extensions.join(',');
+  }
+  if (cfg.turnstile_site_key) mountTurnstile(cfg.turnstile_site_key);
   if (cfg.local_filesystem) return;
 
   document.body.classList.add('hosted');
@@ -1026,11 +1149,6 @@ async function applyDeployMode() {
     if (node) node.remove();
   });
   document.querySelectorAll('.or-divider').forEach(n => n.remove());
-
-  // Project models need SQL Server, which the hosted backend has no way to
-  // reach - so don't offer them in the picker at all.
-  const picker = el('#folder-input');
-  if (picker) picker.accept = '.sa1s,.sa2s,.lf1s,.ul1s,.tu1s';
 
   const hint = el('.browse-hint');
   if (hint) {
@@ -1051,5 +1169,6 @@ async function applyDeployMode() {
   }
 }
 
-applyDeployMode();
-refreshRecentProjects();
+// Config first: it decides which controls exist, and the project list is
+// scoped by the session header that every call now carries.
+applyDeployMode().then(refreshRecentProjects);

@@ -1,0 +1,14 @@
+[
+  {
+    "origin": [
+      "https://etaplens.mazin.ltd"
+    ],
+    "method": ["PUT", "GET", "HEAD"],
+    "responseHeader": [
+      "Content-Type",
+      "x-goog-content-length-range",
+      "x-goog-resumable"
+    ],
+    "maxAgeSeconds": 3600
+  }
+]
