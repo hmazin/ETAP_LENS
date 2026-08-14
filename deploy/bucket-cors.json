@@ -1,7 +1,8 @@
 [
   {
     "origin": [
-      "https://etaplens.mazin.ltd"
+      "https://etaplens.mazin.ltd",
+      "https://etap-lens.vercel.app"
     ],
     "method": ["PUT", "GET", "HEAD"],
     "responseHeader": [

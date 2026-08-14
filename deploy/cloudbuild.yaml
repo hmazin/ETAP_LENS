@@ -7,7 +7,10 @@ substitutions:
   _SERVICE: etap-lens-api
   _REPO: etap-lens
   _BUCKET: etap-lens-uploads
-  _CORS_ORIGINS: https://etaplens.mazin.ltd
+  # Comma-separated. The Vercel production hostname has no generated suffix,
+  # so _CORS_ORIGIN_REGEX (which covers preview builds) does not match it and
+  # it has to be listed here.
+  _CORS_ORIGINS: https://etaplens.mazin.ltd,https://etap-lens.vercel.app
   _CORS_ORIGIN_REGEX: ^https://etap-lens-[a-z0-9-]+\.vercel\.app$
   # Signing upload URLs needs this identity to hold serviceAccountTokenCreator
   # on itself; the default compute account does not, and cannot sign.
