@@ -120,6 +120,42 @@ class GcsStorage:
         except Exception:
             return False
 
+    def _signing_kwargs(self):
+        """Signing a URL needs a private key, and on Cloud Run there isn't one.
+
+        The ambient credentials there are compute-engine credentials with no
+        key material, so signing has to go through the IAM signBlob API - which
+        the library will do, but only if handed the service account's own email
+        and a live access token. Without this, generate_signed_url raises
+        "you need a private key to sign credentials" the first time anyone
+        tries to upload, which is a long way from the obvious cause.
+
+        Requires iamcredentials.googleapis.com enabled and the service account
+        holding roles/iam.serviceAccountTokenCreator on itself.
+        """
+        creds = self._client._credentials
+        # Service-account-key credentials expose .signer; compute-engine ones
+        # do not, and that is the distinction that matters here.
+        if hasattr(creds, "signer"):
+            return {}
+
+        from google.auth.transport import requests as google_requests  # noqa: PLC0415
+
+        if not getattr(creds, "token", None):
+            creds.refresh(google_requests.Request())
+        email = getattr(creds, "service_account_email", None)
+        if not email or email == "default":
+            # The metadata server reports "default" unless asked properly.
+            import urllib.request  # noqa: PLC0415
+
+            req = urllib.request.Request(
+                "http://metadata.google.internal/computeMetadata/v1/instance/"
+                "service-accounts/default/email",
+                headers={"Metadata-Flavor": "Google"})
+            with urllib.request.urlopen(req, timeout=5) as r:
+                email = r.read().decode()
+        return {"service_account_email": email, "access_token": creds.token}
+
     def signed_upload_url(self, key, content_type=None, max_bytes=None, expires=900):
         """A V4 signed PUT the browser uses directly.
 
@@ -140,6 +176,7 @@ class GcsStorage:
             method="PUT",
             content_type=content_type,
             headers=headers,
+            **self._signing_kwargs(),
         )
         return {"url": url, "method": "PUT", "headers": headers, "backend": "gcs"}
 

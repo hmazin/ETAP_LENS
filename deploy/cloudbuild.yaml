@@ -6,9 +6,9 @@ substitutions:
   _REGION: us-central1
   _SERVICE: etap-lens-api
   _REPO: etap-lens
-  _BUCKET: CHANGE_ME
-  _CORS_ORIGINS: CHANGE_ME
-  _CORS_ORIGIN_REGEX: ''
+  _BUCKET: etap-lens-uploads
+  _CORS_ORIGINS: https://etaplens.mazin.ltd
+  _CORS_ORIGIN_REGEX: ^https://etap-lens-[a-z0-9-]+\.vercel\.app$
 
 steps:
   - id: build
