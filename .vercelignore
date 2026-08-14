@@ -1,0 +1,16 @@
+# Vercel serves the static frontend in web/ and nothing else. The Flask app
+# runs on Cloud Run - if Vercel sees app.py and requirements.txt it offers to
+# deploy them as a Python serverless function, which is the architecture this
+# split exists to avoid: a ~4.5 MB request body limit against 150 MB study
+# files, and an ephemeral filesystem under a cache that needs to persist.
+app.py
+etap_reader/
+requirements.txt
+requirements-hosted.txt
+Dockerfile
+.dockerignore
+read_oti.py
+dump_mdf.py
+deploy/
+docs/
+cache/
