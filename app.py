@@ -74,6 +74,11 @@ _load_jobs_lock = threading.Lock()
 _storage = storage.build(appconfig.GCS_BUCKET,
                          os.path.join(project_cache.CACHE_DIR, "objects"))
 
+# Derived caches are mirrored to object storage only when hosted. Locally the
+# disk outlives the process, so there is nothing to protect against.
+if appconfig.IS_HOSTED:
+    project_cache.set_remote(_storage)
+
 
 def current_session():
     """(session_id, error_response_or_None) for this request."""
@@ -135,6 +140,10 @@ def _db(project_id):
     "forbidden" - there is no reason to confirm it exists."""
     manifest = project_cache.get_manifest(project_id, scoped_session())
     if not manifest:
+        return None, None
+    # This instance may never have built this cache - fetch it back if some
+    # earlier instance did and has since been recycled.
+    if not project_cache.ensure_sqlite(manifest):
         return None, None
     conn = sqlite3.connect(manifest["sqlite_path"])
     return conn, manifest

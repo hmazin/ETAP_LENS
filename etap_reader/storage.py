@@ -73,6 +73,17 @@ class LocalStorage:
         except FileNotFoundError:
             return False
 
+    def list(self, prefix):
+        base = self._path(prefix.rstrip("/")) if prefix else self.root
+        if not os.path.isdir(base):
+            return []
+        out = []
+        for dirpath, _dirs, files in os.walk(base):
+            for fn in files:
+                full = os.path.join(dirpath, fn)
+                out.append(os.path.relpath(full, self.root).replace(os.sep, "/"))
+        return sorted(out)
+
     def signed_upload_url(self, key, content_type=None, max_bytes=None, expires=900):
         """No signing to do - the caller PUTs back to this app, which writes
         the bytes through /api/upload/direct."""
@@ -122,6 +133,10 @@ class GcsStorage:
             return True
         except Exception:
             return False
+
+    def list(self, prefix):
+        return sorted(b.name for b in self._client.list_blobs(
+            self._bucket, prefix=_safe_key(prefix.rstrip("/"))))
 
     @staticmethod
     def _metadata_email():

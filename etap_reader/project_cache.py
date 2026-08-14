@@ -34,10 +34,117 @@ def _sqlite_path(project_id: str) -> str:
     return os.path.join(CACHE_DIR, project_id + ".sqlite")
 
 
+# --------------------------------------------------------------------------
+# Durable copies of derived caches
+#
+# Cloud Run's filesystem lives and dies with the instance, and the instance
+# goes away a few minutes after the last request. Without somewhere durable to
+# put them, a visitor's project evaporates while they are still reading it -
+# not an edge case, the normal experience of coming back after a coffee.
+#
+# So each derived cache is mirrored to object storage and pulled back when an
+# instance finds it does not have one. Under lite mode that is ~3.4 MB per
+# study, which makes this cheap enough not to think about. Keys are prefixed
+# by session so a session's projects can be listed without a local index, and
+# so the bucket lifecycle rule can expire them as a group.
+# --------------------------------------------------------------------------
+
+_remote = None
+
+
+def set_remote(storage):
+    """Attach object storage. Left unset locally, where the disk is durable."""
+    global _remote
+    _remote = storage
+
+
+def _remote_keys(session_id: str, project_id: str):
+    base = f"caches/{session_id or sessions.SHARED}/{project_id}"
+    return base + ".json", base + ".sqlite"
+
+
+def _push_remote(manifest: dict):
+    if _remote is None:
+        return
+    mkey, skey = _remote_keys(manifest.get("session_id"), manifest["project_id"])
+    tmp = manifest["sqlite_path"] + ".manifest.json"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(manifest, f)
+        _remote.upload_from(tmp, mkey)
+        _remote.upload_from(manifest["sqlite_path"], skey)
+    except Exception:
+        # A cache that fails to mirror is still usable on this instance; it
+        # just will not survive the instance. Better degraded than a failed
+        # import the user has already waited for.
+        pass
+    finally:
+        if os.path.isfile(tmp):
+            os.remove(tmp)
+
+
+def _pull_manifest(session_id: str, project_id: str):
+    """Restore a manifest this instance has never seen. Returns it, or None."""
+    if _remote is None or not session_id:
+        return None
+    mkey, _ = _remote_keys(session_id, project_id)
+    try:
+        if not _remote.exists(mkey):
+            return None
+        local = _manifest_path(project_id)
+        _remote.download_to(mkey, local)
+    except Exception:
+        return None
+    with open(local, "r", encoding="utf-8") as f:
+        m = json.load(f)
+    # The stored path came from whichever instance built it; make it ours.
+    m["sqlite_path"] = _sqlite_path(project_id)
+    with open(_manifest_path(project_id), "w", encoding="utf-8") as f:
+        json.dump(m, f, indent=2)
+    return m
+
+
+def ensure_sqlite(manifest: dict) -> bool:
+    """Make sure the cache file backing a manifest is on local disk, fetching
+    it from object storage if this instance does not have it. False means it
+    is genuinely gone."""
+    path = manifest.get("sqlite_path", "")
+    if path and os.path.isfile(path):
+        return True
+    if _remote is None:
+        return False
+    _, skey = _remote_keys(manifest.get("session_id"), manifest["project_id"])
+    try:
+        if not _remote.exists(skey):
+            return False
+        _remote.download_to(skey, _sqlite_path(manifest["project_id"]))
+        return True
+    except Exception:
+        return False
+
+
+def hydrate_session(session_id: str):
+    """Pull down manifests for a session this instance has not served before,
+    so the project list survives an instance recycling."""
+    if _remote is None or not session_id:
+        return
+    try:
+        keys = _remote.list(f"caches/{session_id}/")
+    except Exception:
+        return
+    for key in keys:
+        if not key.endswith(".json"):
+            continue
+        project_id = os.path.basename(key)[:-len(".json")]
+        if not os.path.isfile(_manifest_path(project_id)):
+            _pull_manifest(session_id, project_id)
+
+
 def list_projects(session_id: str = None):
     """Projects visible to a session. Passing None lists everything, which is
     only correct for the desktop app - a hosted caller must always scope."""
     os.makedirs(CACHE_DIR, exist_ok=True)
+    hydrate_session(session_id)
     out = []
     for fn in os.listdir(CACHE_DIR):
         if not fn.endswith(".json"):
@@ -78,9 +185,14 @@ def get_manifest(project_id: str, session_id: str = None):
     """
     p = _manifest_path(project_id)
     if not os.path.isfile(p):
-        return None
-    with open(p, "r", encoding="utf-8") as f:
-        m = json.load(f)
+        # Never seen on this instance - it may still exist in object storage,
+        # put there by an instance that has since gone away.
+        m = _pull_manifest(session_id, project_id)
+        if m is None:
+            return None
+    else:
+        with open(p, "r", encoding="utf-8") as f:
+            m = json.load(f)
     if session_id is not None and m.get("session_id", sessions.SHARED) != session_id:
         return None
     return m
@@ -110,7 +222,7 @@ def load_located(located, input_path: str = None, force: bool = False, progress_
     existing = get_manifest(project_id, session_id)
     sqlite_path = _sqlite_path(project_id)
     if (not force and existing and existing.get("source_fingerprint") == source_fingerprint
-            and os.path.isfile(sqlite_path)):
+            and ensure_sqlite(existing)):
         return existing
 
     if located.kind == "study":
@@ -138,6 +250,7 @@ def load_located(located, input_path: str = None, force: bool = False, progress_
     }
     with open(_manifest_path(project_id), "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
+    _push_remote(manifest)
     return manifest
 
 
@@ -168,6 +281,14 @@ def unload_project(project_id: str, session_id: str = None) -> bool:
         upload_root = os.path.join(CACHE_DIR, "uploads")
         if db_path.lower().startswith(os.path.abspath(upload_root).lower()):
             shutil.rmtree(os.path.dirname(db_path), ignore_errors=True)
+        # Otherwise the next request would pull it straight back down.
+        if _remote is not None:
+            for key in _remote_keys(manifest.get("session_id"), project_id):
+                try:
+                    _remote.delete(key)
+                    removed = True
+                except Exception:
+                    pass
 
     return removed
 
