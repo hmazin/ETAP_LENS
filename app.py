@@ -23,6 +23,12 @@ app = Flask(__name__)
 _load_jobs = {}
 _load_jobs_lock = threading.Lock()
 
+# Table payloads are sent to the browser whole and paged client-side, which is
+# fine for model tables (the biggest are a few thousand rows) but not for
+# time-domain results - a year of hourly per-branch data is ~500k rows. Cap the
+# response and tell the client it was capped rather than hanging the tab.
+ROW_LIMIT = 25000
+
 
 def _clean(v):
     if isinstance(v, str):
@@ -226,11 +232,12 @@ def api_category(project_id, key):
         if not _table_exists(conn, t):
             continue
         row_count = _table_row_count(conn, t)
-        cur = conn.execute(f'SELECT * FROM "{t}"')
+        cur = conn.execute(f'SELECT * FROM "{t}" LIMIT {ROW_LIMIT}')
         cols = [d[0] for d in cur.description]
         ordered = cat_defs.order_columns(cols)
         rows = _rows_as_dicts(cur)
-        subtables.append({"table": t, "columns": ordered, "rows": rows, "row_count": row_count})
+        subtables.append({"table": t, "columns": ordered, "rows": rows,
+                          "row_count": row_count, "truncated": len(rows) < row_count})
     conn.close()
     return jsonify({"key": key, "label": cat["label"], "description": cat["description"], "subtables": subtables})
 
@@ -291,12 +298,15 @@ def api_table(project_id, table_name):
     if not _table_exists(conn, table_name):
         conn.close()
         return jsonify({"error": "unknown table"}), 404
-    cur = conn.execute(f'SELECT * FROM "{table_name}"')
+    row_count = _table_row_count(conn, table_name)
+    cur = conn.execute(f'SELECT * FROM "{table_name}" LIMIT {ROW_LIMIT}')
     cols = [d[0] for d in cur.description]
     ordered = cat_defs.order_columns(cols)
     rows = _rows_as_dicts(cur)
     conn.close()
-    return jsonify({"table": table_name, "columns": ordered, "rows": rows, "row_count": len(rows)})
+    return jsonify({"table": table_name, "columns": ordered, "rows": rows,
+                    "row_count": max(row_count, len(rows)),
+                    "truncated": len(rows) < row_count})
 
 
 @app.route("/api/project/<project_id>/overview")

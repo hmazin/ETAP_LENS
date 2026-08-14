@@ -8,12 +8,15 @@ browser, etc.) treats it identically.
 import os
 import sqlite3
 
+from . import time_domain
+
 # extension -> (friendly label, which curated category set in categories.py applies)
 STUDY_EXTENSIONS = {
     ".sa1s": ("Short Circuit - ANSI Duty", "sc_duty"),
     ".sa2s": ("Short Circuit - Fault Currents", "sc_fault"),
     ".lf1s": ("Load Flow - Balanced", "load_flow"),
     ".ul1s": ("Load Flow - Unbalanced (3-Phase)", "load_flow_unbalanced"),
+    ".tu1s": ("Load Flow - Time Domain (TDLF)", "time_domain"),
 }
 
 # ETAP's own report generator writes literal spacer rows into these result
@@ -22,6 +25,11 @@ STUDY_EXTENSIONS = {
 # no engineering data, so we drop them on import rather than showing every
 # view a couple thousand rows of print-formatting noise.
 BLANK_LINE_MARKER = "BlankLine"
+
+# Only text-typed columns can hold the marker, and restricting the scan to
+# them matters: a time-domain result set has ~half a million rows x 53 mostly
+# numeric columns, and LIKE-ing every one of them costs minutes.
+_TEXT_DECLS = ("CHAR", "TEXT", "CLOB")
 
 
 def is_study_file(path: str) -> bool:
@@ -38,7 +46,8 @@ def _strip_blank_line_rows(conn: sqlite3.Connection, tables) -> int:
     that has one. Returns the total number of rows removed."""
     removed = 0
     for t in tables:
-        cols = [row[1] for row in conn.execute(f'PRAGMA table_info("{t}")').fetchall()]
+        cols = [row[1] for row in conn.execute(f'PRAGMA table_info("{t}")').fetchall()
+                if any(d in (row[2] or "").upper() for d in _TEXT_DECLS)]
         if not cols:
             continue
         where = " OR ".join(f'"{c}" LIKE ?' for c in cols)
@@ -66,7 +75,7 @@ def import_study_to_sqlite(source_path: str, out_sqlite_path: str, progress_cb=N
     finally:
         src.close()
 
-    report("indexing")
+    report("scanning")
     # Capture the real table list *before* creating _table_index, so the
     # index doesn't end up listing (and mis-counting) itself.
     tables = [r[0] for r in dst.execute(
@@ -75,6 +84,19 @@ def import_study_to_sqlite(source_path: str, out_sqlite_path: str, progress_cb=N
 
     _strip_blank_line_rows(dst, tables)
 
+    # Time-domain results are keyed by integer IDs and are far too large to
+    # read raw, so we add name-resolved and rolled-up tables before indexing
+    # (they need to appear in _table_index like any other table).
+    derived = {}
+    if time_domain.is_time_domain(dst):
+        report("deriving")
+        derived = time_domain.derive(dst, progress_cb=progress_cb)
+        tables = [r[0] for r in dst.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' "
+            "AND name NOT LIKE 'sqlite_%' AND name != '_table_index'"
+        ).fetchall()]
+
+    report("indexing")
     dst.execute("DROP TABLE IF EXISTS _table_index")
     dst.execute("CREATE TABLE _table_index (table_name TEXT, row_count INTEGER)")
 
@@ -90,4 +112,5 @@ def import_study_to_sqlite(source_path: str, out_sqlite_path: str, progress_cb=N
         "tables": len(table_stats),
         "rows_total": sum(t["rows"] for t in table_stats),
         "table_stats": table_stats,
+        "derived_tables": derived,
     }

@@ -202,6 +202,84 @@ STUDY_CATEGORIES = {
             "tables": ["Alert", "Messages"],
         },
     },
+    "time_domain": {  # .TU1S - time-domain load flow (a load flow per time step)
+        "summary": {
+            "label": "Study Summary",
+            "description": "Headline totals for the whole simulated period: energy, peak, "
+                           "losses, capacity factor, and the worst voltage/loading seen.",
+            "tables": ["TDStudySummary", "TDStudyCaseInfo"],
+        },
+        "energy_losses": {
+            "label": "Energy & Losses",
+            "description": "Annual AC loss report: generation at the units, losses split across "
+                           "transmission lines / cables / transformers, and net output at the "
+                           "point of interconnection.",
+            "tables": ["TDEnergyBalance", "TDLossSummary", "TDDeviceLosses"],
+        },
+        "loss_series": {
+            "label": "Loss Time Series",
+            "description": "One row per time step: loss split by equipment class, generation at "
+                           "the units, and plant output.",
+            "tables": ["TDLossHourly"],
+        },
+        "monthly": {
+            "label": "Monthly Summary",
+            "description": "Energy, peak/average output, losses, and extremes rolled up per month.",
+            "tables": ["TDMonthlySummary"],
+        },
+        "device_summary": {
+            "label": "Device Summary",
+            "description": "Per-branch annual peak and average loading, when it peaked, and how "
+                           "many steps sat above 90%/100%. Three-winding transformers appear "
+                           "once per winding.",
+            "tables": ["TDDeviceSummary"],
+        },
+        "system_series": {
+            "label": "System Time Series",
+            "description": "One row per time step: generation, load, losses, voltage extremes, "
+                           "worst branch loading, and violation counts.",
+            "tables": ["TDSystemHourly"],
+        },
+        "branch_series": {
+            "label": "Branch Time Series",
+            "description": "One row per time step per branch, with device names and timestamps "
+                           "resolved. Large - this is the raw per-device series.",
+            "tables": ["TDBranchHourly"],
+        },
+        "worst_cases": {
+            "label": "Worst-Case Loading",
+            "description": "ETAP's own worst-case loading record per device across the run. "
+                           "-999 means the device had no capacity entered, so no loading "
+                           "percentage could be calculated.",
+            "tables": ["TD2TWorstOverLoadCases", "TD3TWorstOverLoadCases", "TDWorstVoltageCases"],
+        },
+        "equipment": {
+            "label": "Equipment in Study",
+            "description": "The branches, transformers, buses, and groups the simulation covered.",
+            "tables": ["TDTwoTermDevicesInfo", "TDTrans3XDevicesInfo", "TDOneTermDevicesInfo",
+                       "TDBusInfo", "TDGroupInfo", "TDMetersInfo", "TDPlantsInfo",
+                       "TDControllerInfo", "TDSwitchCapInfo"],
+        },
+        "raw_results": {
+            "label": "Raw Result Tables",
+            "description": "ETAP's unmodified fact tables, keyed by DeviceIID and ResultID "
+                           "(join to the Info tables and TDTimeID to read them).",
+            "tables": ["TDSysResult", "TDBranchResult", "TDBusResult", "TDTrans3XResult",
+                       "TDGroupResult", "TDSourceandLoadResult", "TDMetersResult",
+                       "TDSVCResults", "TDVFDResults", "TDSwitchCapResults",
+                       "TDControllerResult", "TDGridCodeResults", "TDEnergyStorage"],
+        },
+        "time_index": {
+            "label": "Time Index",
+            "description": "Maps each ResultID to its timestamp, profile, and step number.",
+            "tables": ["TDTimeID", "TDResultIDInfo"],
+        },
+        "alerts": {
+            "label": "Alerts / Actions",
+            "description": "Violations flagged during the run, and any control actions taken.",
+            "tables": ["TDAlert", "TDActions", "Alert", "Messages"],
+        },
+    },
 }
 
 # Small "info" tables worth showing on the Overview page, keyed by table name
@@ -216,6 +294,11 @@ OVERVIEW_INFO_TABLES = {
     "IsummaryLF3PH": "Equipment Summary (as of this study)",
     "LFSumTotal": "System Totals",
     "LFSumTotalLF3PH": "System Totals",
+    "TDStudySummary": "Time-Domain Study Summary",
+    "TDEnergyBalance": "Energy Balance (Generation - Losses - Output)",
+    "TDLossSummary": "Annual Losses by Equipment Class",
+    "TDStudyCaseInfo": "Study Case Parameters",
+    "TDMonthlySummary": "Monthly Summary",
     "Headr": "Header",
 }
 
@@ -272,6 +355,8 @@ SOURCE_TABLES_PRIORITY = ["Utility", "SynGen"]
 # Column names promoted to the front of the table for readability. Anything
 # not listed keeps its original (schema) order after these.
 PRIORITY_COLUMNS = [
+    "Metric", "Value", "Unit",
+    "Step", "Time", "MonthNo", "Month", "HourOfDay", "Winding", "LossClass",
     "ID", "Code", "Description", "InService", "Status",
     "Bus", "FromBus", "ToBus", "TertBus", "FromElement", "ToElement",
     "FaultedBus", "DeviceID", "PDID", "DeviceType", "PDType",

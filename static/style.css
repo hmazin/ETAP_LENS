@@ -222,6 +222,12 @@ code { background: var(--accent-dim); padding: 1px 5px; border-radius: 4px; font
 .export-panel-actions button:hover { background: var(--accent); color: #fff; }
 .export-status { font-size: 12px; color: var(--text-dim); margin-top: 8px; }
 
+.truncation-note {
+  font-size: 12.5px; color: var(--warn, #d08b28); margin-bottom: 10px;
+  padding: 9px 12px; border-radius: 8px;
+  border: 1px solid var(--warn, #d08b28); background: rgba(208, 139, 40, 0.09);
+}
+
 .table-scroll { overflow: auto; border: 1px solid var(--border); border-radius: 10px; max-height: 60vh; background: var(--panel); }
 table.data-table { border-collapse: collapse; width: max-content; min-width: 100%; font-size: 12.5px; }
 table.data-table th, table.data-table td {

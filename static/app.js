@@ -382,7 +382,17 @@ const CATEGORY_SET_LABELS = {
   sc_fault: 'Short Circuit Study - Fault Currents',
   load_flow: 'Load Flow Study - Balanced',
   load_flow_unbalanced: 'Load Flow Study - Unbalanced (3-Phase)',
+  time_domain: 'Time-Domain Load Flow Study (TDLF)',
 };
+
+// Shown above a table whose payload the server capped. Filtering and sorting
+// in the toolbar only see the rows that were sent, so say so plainly rather
+// than letting a search silently miss most of the year.
+function truncationNotice(rowCount, shown) {
+  return `<div class="truncation-note">Showing the first ${shown.toLocaleString()}
+    of ${rowCount.toLocaleString()} rows. Search, sort and export apply to these
+    rows only - use the summary tables for whole-run figures.</div>`;
+}
 
 async function showOverview() {
   content().innerHTML = '<div class="loading">Loading overview...</div>';
@@ -498,7 +508,7 @@ async function showCategory(key) {
 
   function renderSub(s) {
     const wrap = el('#sub-content');
-    wrap.innerHTML = '';
+    wrap.innerHTML = s.truncated ? truncationNotice(s.row_count, s.rows.length) : '';
     wrap.appendChild(renderDataTable(s.columns, s.rows, s.table));
   }
 }
@@ -538,6 +548,9 @@ async function showRawTable(tableName) {
     <div id="raw-table-content"></div>
   `;
   el('#back-to-tables').addEventListener('click', (e) => { e.preventDefault(); showAllTables(); });
+  if (data.truncated) {
+    el('#raw-table-content').innerHTML = truncationNotice(data.row_count, data.rows.length);
+  }
   el('#raw-table-content').appendChild(renderDataTable(data.columns, data.rows, tableName));
 }
 

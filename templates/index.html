@@ -18,7 +18,7 @@
         <label class="browse-label">Find a project or study file</label>
         <button id="fs-browse-btn">&#128449; Browse Folders...</button>
         <button id="browse-btn">&#128193; Browse for single file...</button>
-        <input id="folder-input" type="file" accept=".oti,.mdf,.bak,.sa1s,.sa2s,.lf1s,.ul1s" multiple class="hidden">
+        <input id="folder-input" type="file" accept=".oti,.mdf,.bak,.sa1s,.sa2s,.lf1s,.ul1s,.tu1s" multiple class="hidden">
         <div class="browse-hint">"Browse Folders" lets you navigate into subfolders and pick a file, all inside
           this page. "Browse for single file" opens the normal OS file picker if you already know exactly which
           file you want. Tip: if you only see/pick the <code>.oti</code> there, hold Ctrl and also click the
@@ -59,7 +59,8 @@
            finds and reads the real database (<code>.MDF</code>/<code>.BAK</code>) sitting next to it.</p>
         <p class="hint">You can also load study result files the same way - pick them directly: short-circuit
            (<code>.SA1S</code> ANSI duty, <code>.SA2S</code> fault currents) or load flow
-           (<code>.LF1S</code> balanced, <code>.UL1S</code> unbalanced/3-phase).</p>
+           (<code>.LF1S</code> balanced, <code>.UL1S</code> unbalanced/3-phase,
+           <code>.TU1S</code> time-domain/TDLF - which also gets an annual AC loss report).</p>
         <p class="hint">Paste a <strong>folder</strong> path instead of a file to scan the whole project
            directory - you'll get a list of everything loadable in it, and pick just the one you want. Or use
            <strong>Browse Folders</strong> on the left to navigate there visually.</p>

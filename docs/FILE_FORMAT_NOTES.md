@@ -45,6 +45,75 @@ streams:
 - `/MultiUser/MultiUserStream` - multi-user locking state, empty/zeroed in
   every project seen so far.
 
+## `.TU1S` - Time-Domain Load Flow (TDLF) results
+
+Plain SQLite, like the other study result files. A TDLF run solves a load
+flow once per time step over a profile - typically 8760 hourly steps for a
+calendar year - and stores the answer as narrow fact tables keyed by
+integers.
+
+**Shape.** `TDTimeID` maps `ResultID` -> timestamp (`MM-DD-YYYY HH:MM:SS.mmm`)
+and step number; `TDTwoTermDevicesInfo` / `TDTrans3XDevicesInfo` map
+`DeviceIID` -> device name, type and rating. The result tables carry only
+those two integers plus numbers, so nothing in them is readable without
+joining both. Row counts multiply fast: `TDBranchResult` is
+steps x branches (473,040 rows for 54 branches over a year).
+
+`TDStudyCaseInfo` holds the run's setup, including `SimulationHoursperStep` -
+needed to turn MW into MWh, and easy to silently get wrong if assumed to be 1.
+
+**Sign convention (the thing worth writing down).** Both terminals of a
+branch are reported as power flowing *into* the branch from the bus at that
+end. So the loss in a branch is just the sum of its terminals:
+
+```
+two-terminal    loss = From + To
+three-winding   loss = Prim + Sec + Ter
+```
+
+The two terms are nearly equal with opposite signs, and what survives is the
+loss. Summing that over every branch reproduces ETAP's own `MWLossPh*`
+system total - that agreement is what pins the convention down, and it's
+worth re-checking on any new model rather than trusting the formula blind.
+
+Consequence: loss is a small difference of two large numbers, and ETAP
+stores results as **single precision** (every sampled value round-trips
+through float32 unchanged). At ~48 MW per terminal, one ulp is ~3e-6 MW, so
+summed across 55 branches the per-step residual against ETAP's own total
+lands around 1e-5 MW - about 14 microwatts on a 3.8 MW peak. That is the
+precision floor of the stored data, not an arithmetic error. Don't chase it,
+and don't present per-step losses to more digits than it supports.
+
+Same floor makes extremes degenerate: a wind farm pinned at its cap sits at
+an identical output for hundreds of steps, and their losses differ by less
+than one ulp. "Peak loss occurred at <timestamp>" is then a coin flip among
+tied steps - ETAP's report and an independent pass will disagree on which
+one, while agreeing on the value. Report the tie count alongside.
+
+**Energy integration - ETAP's report drops the last sample.** ETAP's own
+Time Series report (`GM_Complete.xlsx`, `SystemSummary` sheet) integrates
+only the first N-1 steps, treating the series as the intervals *between*
+samples. For an 8760-sample year that is 8759 hours of energy: reproducing
+it exactly requires excluding the final step. Verified against a real run -
+wind energy matched to 0.0000 MWh with the final step dropped, and differed
+by exactly that step's output (137.08 MWh) with it included. Summing all N
+samples is the defensible annual figure; matching ETAP's published number
+requires the N-1 convention, so it's worth reporting both.
+
+Two more traps in that report:
+- The `SystemSummary` sheet's **"AC Generation"** row is the swing-source
+  energy, which for a generation-only plant equals the losses - not
+  generation. Its **"Total Energy Loss"** row repeats System Generation
+  (generation + swing), so it is not the loss figure it appears to be.
+- ETAP ships a blank copy of the same workbook as a template (ETAP version
+  18.0.0C, 2018 placeholder dates, "Yes / No" literals in the Info sheet).
+  Check that the `TDLF-Result` sheet actually has rows before trusting it.
+
+**Branches with no capacity entered** get no loading percentage: ETAP writes
+`-999` into `TD2TWorstOverLoadCases` and leaves `LoadingPercent*` at zero.
+That is "not evaluated", not "0% loaded", and reporting it as the latter is
+misleading - cables in particular often have no ampacity in the model.
+
 ## `.MDF` table conventions
 
 ~870 tables per project. Broad patterns:
