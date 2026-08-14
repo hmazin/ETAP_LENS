@@ -14,12 +14,16 @@ substitutions:
   _RUNTIME_SA: etap-lens-api@etap-lens.iam.gserviceaccount.com
 
 steps:
+  # Tagged with $BUILD_ID rather than $COMMIT_SHA: the latter is only
+  # populated for trigger-based builds, so a manual `gcloud builds submit`
+  # produces an empty tag and docker exits 125 on the malformed argument.
+  # $BUILD_ID is set for both.
   - id: build
     name: gcr.io/cloud-builders/docker
     args:
       - build
       - -t
-      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:$COMMIT_SHA
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:$BUILD_ID
       - -t
       - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:latest
       - .
@@ -36,7 +40,7 @@ steps:
       - run
       - deploy
       - ${_SERVICE}
-      - --image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:$COMMIT_SHA
+      - --image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:$BUILD_ID
       - --region=${_REGION}
       - --platform=managed
       - --allow-unauthenticated          # public tool; abuse is handled in-app
