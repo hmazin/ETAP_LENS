@@ -1087,7 +1087,9 @@ el('#fs-select-folder-btn').addEventListener('click', () => {
 });
 el('#fs-modal').addEventListener('click', (e) => { if (e.target.id === 'fs-modal') closeFolderBrowser(); });
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && !el('#fs-modal').classList.contains('hidden')) closeFolderBrowser();
+  // The modal is absent entirely on a hosted instance.
+  const modal = el('#fs-modal');
+  if (e.key === 'Escape' && modal && !modal.classList.contains('hidden')) closeFolderBrowser();
 });
 
 // ---------- Startup ----------
@@ -1133,9 +1135,16 @@ async function applyDeployMode() {
   try {
     cfg = await api('/api/config');
   } catch {
-    return;  // backend without /api/config - leave the local UI as-is
+    // No answer - assume the local desktop app, which is the only way this
+    // page is served without an API alongside it.
+    document.body.classList.remove('config-pending');
+    return;
   }
   deployConfig = cfg;
+  // Mode is known: either reveal the local controls or leave them hidden and
+  // strip them below.
+  document.body.classList.toggle('hosted', !cfg.local_filesystem);
+  document.body.classList.remove('config-pending');
   if (cfg.accepted_extensions?.length) {
     const picker = el('#folder-input');
     if (picker) picker.accept = cfg.accepted_extensions.join(',');
@@ -1143,12 +1152,9 @@ async function applyDeployMode() {
   if (cfg.turnstile_site_key) mountTurnstile(cfg.turnstile_site_key);
   if (cfg.local_filesystem) return;
 
-  document.body.classList.add('hosted');
-  ['#fs-browse-btn', '#path-input', '#load-btn', '#path-candidates'].forEach(sel => {
-    const node = el(sel);
-    if (node) node.remove();
-  });
-  document.querySelectorAll('.or-divider').forEach(n => n.remove());
+  // CSS has already hidden these; remove them so no stray handler can reach
+  // them and no screen reader announces controls that cannot work.
+  document.querySelectorAll('.local-only').forEach(n => n.remove());
 
   const hint = el('.browse-hint');
   if (hint) {
