@@ -9,6 +9,9 @@ substitutions:
   _BUCKET: etap-lens-uploads
   _CORS_ORIGINS: https://etaplens.mazin.ltd
   _CORS_ORIGIN_REGEX: ^https://etap-lens-[a-z0-9-]+\.vercel\.app$
+  # Signing upload URLs needs this identity to hold serviceAccountTokenCreator
+  # on itself; the default compute account does not, and cannot sign.
+  _RUNTIME_SA: etap-lens-api@etap-lens.iam.gserviceaccount.com
 
 steps:
   - id: build
@@ -47,6 +50,7 @@ steps:
       # so a second instance would answer status polls for jobs it has never
       # heard of. Raising this means moving that state to Firestore first.
       - --max-instances=1
+      - --service-account=${_RUNTIME_SA}
       - --set-env-vars=ETAP_LENS_MODE=hosted,ETAP_LENS_GCS_BUCKET=${_BUCKET},ETAP_LENS_CORS_ORIGINS=${_CORS_ORIGINS},ETAP_LENS_CORS_ORIGIN_REGEX=${_CORS_ORIGIN_REGEX}
       # Turnstile keys are secrets, so they are attached separately:
       #   gcloud run services update ${_SERVICE} --region ${_REGION} \
