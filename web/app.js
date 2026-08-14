@@ -398,6 +398,14 @@ const CATEGORY_SET_LABELS = {
 // Shown above a table whose payload the server capped. Filtering and sorting
 // in the toolbar only see the rows that were sent, so say so plainly rather
 // than letting a search silently miss most of the year.
+/** Shown where a lite cache has deliberately left nothing to display. */
+function truncationNotice_lite() {
+  return `<div class="truncation-note">This copy keeps only the summary tables. The per-step
+    detail behind them - one row per branch per time step - was discarded after the summaries
+    were built, which is why there is nothing here. Load the file in the desktop app to page
+    through the raw series.</div>`;
+}
+
 function truncationNotice(rowCount, shown) {
   return `<div class="truncation-note">Showing the first ${shown.toLocaleString()}
     of ${rowCount.toLocaleString()} rows. Search, sort and export apply to these
@@ -407,7 +415,7 @@ function truncationNotice(rowCount, shown) {
 async function showOverview() {
   content().innerHTML = '<div class="loading">Loading overview...</div>';
   const data = await api(`/api/project/${currentProjectId}/overview`);
-  const m = data.manifest;
+  const m = currentManifest = data.manifest;
   const categorySet = m.category_set || 'model';
 
   const kv = (obj) => Object.entries(obj)
@@ -433,6 +441,10 @@ async function showOverview() {
           <div class="export-status" id="violations-report-status"></div>
         </div>` : ''}
     </div>
+    ${m.stats.lite_cache ? `<div class="truncation-note">Summary tables only. The per-step
+      detail ETAP produced (one row per branch per time step) was discarded after the
+      summaries were built, so the raw result tables and the branch time series are not
+      available here - load this file in the desktop app to page through them.</div>` : ''}
 
     <div class="card">
       <h3>${categorySet === 'model' ? 'Equipment Summary' : 'Results Summary'}</h3>
@@ -498,7 +510,11 @@ async function showCategory(key) {
   `;
 
   if (nonEmpty.length === 0) {
-    el('#sub-content').innerHTML = `<div class="loading">No data found for this category in this project.</div>`;
+    // Under a lite cache these categories are empty by design, not because the
+    // study had nothing in them - say which it is.
+    el('#sub-content').innerHTML = currentManifest?.stats?.lite_cache
+      ? truncationNotice_lite()
+      : `<div class="loading">No data found for this category in this project.</div>`;
     return;
   }
 

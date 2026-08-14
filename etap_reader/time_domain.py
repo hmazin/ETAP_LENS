@@ -783,9 +783,44 @@ def _energy_balance(conn, hours_per_step, total_loss_mwh, gen_mwh):
 
 
 # --------------------------------------------------------------------------
+# lite cache
+# --------------------------------------------------------------------------
 
-def derive(conn: sqlite3.Connection, progress_cb=None) -> dict:
-    """Build the derived tables. Safe to re-run: every table is dropped first."""
+# ETAP's per-step fact tables, and the timestamp map that only exists to make
+# sense of them. Everything the summaries need has already been read out of
+# these by the time they are dropped; what is lost is the ability to page
+# through individual steps, which is what TDSystemHourly and TDLossHourly
+# cover in aggregate.
+_PER_STEP_TABLES = [
+    "TDBranchResult",
+    "TDSysResult",
+    "TDTrans3XResult",
+    "TDGroupResult",
+    "TDResultIDInfo",
+]
+
+
+def _slim(conn) -> list:
+    """Drop the per-step fact tables and reclaim the space."""
+    dropped = []
+    for t in _PER_STEP_TABLES:
+        if _has(conn, t):
+            conn.execute(f'DROP TABLE "{t}"')
+            dropped.append(t)
+    conn.commit()
+    # VACUUM rewrites the file; without it the pages stay allocated and the
+    # cache is no smaller on disk than it was before the drops.
+    conn.execute("VACUUM")
+    return dropped
+
+
+# --------------------------------------------------------------------------
+
+def derive(conn: sqlite3.Connection, lite: bool = False, progress_cb=None) -> dict:
+    """Build the derived tables. Safe to re-run: every table is dropped first.
+
+    With lite=True the per-branch series is never built and ETAP's own per-step
+    tables are dropped afterwards, leaving only the summaries."""
     def report(stage):
         if progress_cb:
             progress_cb(stage, 0, 0)
@@ -820,13 +855,20 @@ def derive(conn: sqlite3.Connection, progress_cb=None) -> dict:
     built["TDEnergyBalance"] = _energy_balance(
         conn, hours_per_step, total_loss_mwh, gen_mwh)
 
-    if _has(conn, "TDBranchResult") and _has(conn, "TDTwoTermDevicesInfo"):
+    # Skipped entirely under lite - it is the single biggest table in the
+    # cache, and building it only to drop it wastes the time twice over.
+    conn.execute("DROP TABLE IF EXISTS TDBranchHourly")
+    if not lite and _has(conn, "TDBranchResult") and _has(conn, "TDTwoTermDevicesInfo"):
         report("denormalizing branch hourly")
-        conn.execute("DROP TABLE IF EXISTS TDBranchHourly")
         conn.execute(_BRANCH_HOURLY_SQL)
         conn.execute("CREATE INDEX IF NOT EXISTS ix_tdbrh_dev "
                      "ON TDBranchHourly(DeviceID, Step)")
         built["TDBranchHourly"] = _scalar(conn, "SELECT COUNT(*) FROM TDBranchHourly", 0)
 
     conn.commit()
+
+    if lite:
+        report("slimming cache")
+        built["_dropped"] = _slim(conn)
+
     return built

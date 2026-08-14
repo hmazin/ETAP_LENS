@@ -72,10 +72,24 @@ The app has two modes, set by `ETAP_LENS_MODE`. It defaults to **`local`** — t
 | `ETAP_LENS_MAX_UPLOAD_MB` | `300` | Rejected with a JSON 413 above this |
 | `ETAP_LENS_CORS_ORIGINS` | — | Comma-separated exact origins allowed to call the API |
 | `ETAP_LENS_CORS_ORIGIN_REGEX` | — | For preview deployments with generated hostnames |
+| `ETAP_LENS_LITE_CACHE` | on when hosted | Keep only the summary tables (see below) |
 
 In hosted mode `/api/browse`, `/api/browse/quick`, and path-based `/api/load` return 403, and the frontend hides the controls that use them (it reads `/api/config` at startup). Only study result files are supported — `.MDF`/`.BAK` need SQL Server LocalDB, which is Windows-only.
 
 > Anchor `ETAP_LENS_CORS_ORIGIN_REGEX` to your own hostnames. A pattern like `.*\.vercel\.app` would let anybody's app call your API from a visitor's browser.
+
+### Lite cache
+
+A time-domain study is mostly per-step detail — a year of hourly results across 54 branches is ~473,000 rows, while the derived summaries that answer almost every real question are ~27,000. With `ETAP_LENS_LITE_CACHE` on, the per-branch series is never built and ETAP's own per-step tables are dropped once the summaries are computed:
+
+| | Cached size | Tables | Rows |
+|---|---:|---:|---:|
+| Full | 271.9 MB | 46 | 1,025,231 |
+| Lite | 3.7 MB | 40 | 26,591 |
+
+Every summary table is byte-identical between the two — lite changes what you can drill into, never a number. What it costs is the "Branch Time Series" and "Raw Result Tables" views, which the UI labels as deliberately empty rather than leaving you to wonder.
+
+It only applies to time-domain results; nothing else has per-step tables worth dropping. Off by default locally, on by default when hosted, where it's the difference between an expensive service and a cheap one — and means what sits at rest is aggregate results rather than a complete model.
 
 Build and run the container:
 

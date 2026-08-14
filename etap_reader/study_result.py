@@ -8,7 +8,7 @@ browser, etc.) treats it identically.
 import os
 import sqlite3
 
-from . import time_domain
+from . import appconfig, time_domain
 
 # extension -> (friendly label, which curated category set in categories.py applies)
 STUDY_EXTENSIONS = {
@@ -57,7 +57,13 @@ def _strip_blank_line_rows(conn: sqlite3.Connection, tables) -> int:
     return removed
 
 
-def import_study_to_sqlite(source_path: str, out_sqlite_path: str, progress_cb=None) -> dict:
+def import_study_to_sqlite(source_path: str, out_sqlite_path: str, progress_cb=None,
+                           lite: bool = None) -> dict:
+    """lite=None follows the deployment default (see appconfig.LITE_CACHE);
+    pass a bool to force it either way."""
+    if lite is None:
+        lite = appconfig.LITE_CACHE
+
     def report(stage):
         if progress_cb:
             progress_cb(stage, 0, 0)
@@ -88,9 +94,10 @@ def import_study_to_sqlite(source_path: str, out_sqlite_path: str, progress_cb=N
     # read raw, so we add name-resolved and rolled-up tables before indexing
     # (they need to appear in _table_index like any other table).
     derived = {}
-    if time_domain.is_time_domain(dst):
+    is_td = time_domain.is_time_domain(dst)
+    if is_td:
         report("deriving")
-        derived = time_domain.derive(dst, progress_cb=progress_cb)
+        derived = time_domain.derive(dst, lite=lite, progress_cb=progress_cb)
         tables = [r[0] for r in dst.execute(
             "SELECT name FROM sqlite_master WHERE type='table' "
             "AND name NOT LIKE 'sqlite_%' AND name != '_table_index'"
@@ -113,4 +120,7 @@ def import_study_to_sqlite(source_path: str, out_sqlite_path: str, progress_cb=N
         "rows_total": sum(t["rows"] for t in table_stats),
         "table_stats": table_stats,
         "derived_tables": derived,
+        # Only meaningful for time-domain results - nothing else has per-step
+        # tables worth dropping, so the flag would be misleading elsewhere.
+        "lite_cache": bool(lite and is_td),
     }

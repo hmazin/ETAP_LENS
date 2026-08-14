@@ -51,6 +51,18 @@ IS_LOCAL = not IS_HOSTED
 MAX_UPLOAD_MB = _env_int("ETAP_LENS_MAX_UPLOAD_MB", 300)
 MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
 
+# Time-domain results are mostly per-step detail: a year of hourly data for 54
+# branches is ~473k rows, and the derived summaries that answer almost every
+# real question are ~27k. Dropping the per-step tables after deriving takes a
+# cached study from ~272 MB to ~3.4 MB.
+#
+# Off locally, where disk is cheap and you may well want to page through the
+# raw series. On by default when hosted, where it decides whether this is an
+# expensive service or a cheap one - and means what sits at rest is aggregate
+# results rather than a complete client model.
+_lite = _env("ETAP_LENS_LITE_CACHE")
+LITE_CACHE = IS_HOSTED if not _lite else _lite.lower() in ("1", "true", "yes", "on")
+
 # Exact origins allowed to call the API cross-origin, e.g.
 # "https://etaplens.example.com,https://www.etaplens.example.com".
 CORS_ORIGINS = _env_list("ETAP_LENS_CORS_ORIGINS")
@@ -69,4 +81,5 @@ def public_config():
         "deploy_mode": DEPLOY_MODE,
         "local_filesystem": IS_LOCAL,
         "max_upload_mb": MAX_UPLOAD_MB,
+        "lite_cache": LITE_CACHE,
     }
