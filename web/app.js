@@ -860,14 +860,17 @@ function boardTileHtml(m, isEmpty) {
   }
 
   const dim = isEmpty || !m.files.length;
+  // Model is the project database rather than one of ETAP's study modules,
+  // so it has no tag - and with nothing to put in the footer, drawing one
+  // leaves a divider rule with empty space under it.
   const foot = m.files.length && !isEmpty
     ? `${m.files.length} file${m.files.length > 1 ? 's' : ''}`
-    : (m.etap_tag ? `ETAP ${esc(m.etap_tag)}` : '&nbsp;');
+    : (m.etap_tag ? `ETAP ${esc(m.etap_tag)}` : '');
 
   return `<div class="tile${dim ? ' dim' : ''}" data-state="${esc(m.state)}">
             <div class="tile-mod">${esc(m.label)}</div>
             ${body}
-            <div class="tile-foot">${foot}</div>
+            ${foot ? `<div class="tile-foot">${foot}</div>` : ''}
           </div>`;
 }
 
