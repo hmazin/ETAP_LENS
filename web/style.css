@@ -368,6 +368,11 @@ table.data-table tfoot td.stat-label {
 
 .board {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(215px, 1fr)); gap: 12px;
+  /* Grid stretches every tile in a row to match the tallest one. A module
+     holding fifteen studies would then leave ~300px of empty box inside the
+     module holding none, which reads as broken rather than empty. Let each
+     tile take its own height; min-height keeps the sparse ones uniform. */
+  align-items: start;
 }
 
 .tile {
