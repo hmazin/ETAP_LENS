@@ -740,6 +740,17 @@ function setLoadersDisabled(disabled) {
   });
 }
 
+// #path-candidates goes with #load-btn: absent in hosted mode. Reaching for it
+// there throws, and this runs on the success path - between "Loaded." and the
+// call that actually renders the project - so a throw here leaves the sidebar
+// claiming success with nothing on screen.
+function clearCandidateBoxes() {
+  ['#browse-candidates', '#path-candidates'].forEach(sel => {
+    const node = el(sel);
+    if (node) node.innerHTML = '';
+  });
+}
+
 async function pollJob(jobId) {
   const statusBox = el('#load-status');
   while (true) {
@@ -754,8 +765,7 @@ async function pollJob(jobId) {
       statusBox.textContent = 'Loaded.';
       statusBox.className = 'ok';
       setLoadersDisabled(false);
-      el('#browse-candidates').innerHTML = '';
-      el('#path-candidates').innerHTML = '';
+      clearCandidateBoxes();
       await refreshRecentProjects();
       await activateProject(job.project_id);
       return;
@@ -847,13 +857,14 @@ const EXT_LABELS = {
   mdf: 'Project Database (.MDF)', bak: 'Project Database Backup (.BAK)',
   sa1s: 'Short Circuit - ANSI Duty', sa2s: 'Short Circuit - Fault Currents',
   lf1s: 'Load Flow - Balanced', ul1s: 'Load Flow - Unbalanced (3-Phase)',
+  tu1s: 'Time-Domain Load Flow (TDLF)',
 };
 
 // Out of whatever the user picked in the file dialog (they can multi-select,
 // e.g. ctrl-click both the .oti and the .mdf), find the actual loadable
 // file(s): prefer .mdf (live data) over .bak (backup) over study results.
 function pickDbCandidates(files) {
-  const dbFiles = files.filter(f => /\.(mdf|bak|sa1s|sa2s|lf1s|ul1s)$/i.test(f.name));
+  const dbFiles = files.filter(f => /\.(mdf|bak|sa1s|sa2s|lf1s|ul1s|tu1s)$/i.test(f.name));
   const otiFiles = files.filter(f => /\.oti$/i.test(f.name));
   const rank = (name) => {
     if (/\.mdf$/i.test(name)) return 0;
