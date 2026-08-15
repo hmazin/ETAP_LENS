@@ -752,17 +752,22 @@ function boardTileHtml(m, isEmpty) {
           </div>`;
 }
 
-function showBoard(board) {
+/** hasFolder distinguishes "nothing opened yet" from "opened a folder that
+ *  holds no ETAP files" - both have zero files but they need opposite copy. */
+function showBoard(board, hasFolder = null) {
   currentBoard = board;
   currentProjectId = null;
   el('#menu').classList.add('hidden');
   setActiveMenu(null);
 
-  const isEmpty = !board.folder && board.total_files === 0;
+  const opened = hasFolder === null ? !!board.folder : hasFolder;
+  const isEmpty = !opened && board.total_files === 0;
   const sub = isEmpty
     ? 'Open a project folder to see what studies it contains.'
-    : `${board.total_files} loadable file${board.total_files === 1 ? '' : 's'}`
-      + (board.folder ? ` &middot; ${esc(board.folder)}` : '');
+    : board.total_files === 0
+      ? 'No ETAP files directly inside that folder - try the folder holding the project itself.'
+      : `${board.total_files} loadable file${board.total_files === 1 ? '' : 's'}`
+        + (board.folder ? ` &middot; ${esc(board.folder)}` : '');
 
   content().innerHTML = `
     <div class="board-head">
@@ -827,15 +832,26 @@ async function openBoardForPath(path) {
 /** Hosted path: the browser enumerated the folder, so only names and sizes
  *  are sent. No file content leaves the machine until a tile is opened. */
 async function openBoardForFileList(fileList) {
-  const files = [...fileList];
-  if (!files.length) return;
+  const picked = [...fileList];
+  if (!picked.length) return;
+
+  // webkitRelativePath is "<folder>/<...>/<name>"; its first segment is the
+  // only name we have for the folder the user picked. Read it before
+  // filtering, so a folder with no ETAP files in it still has a name.
+  const folderName = (picked[0].webkitRelativePath || '').split('/')[0] || 'Project';
+
+  // Only ETAP files are named to the server. A project folder holds drawings,
+  // reports and correspondence too, and their filenames carry client and
+  // project identifiers that have no business leaving this machine to answer
+  // "which studies are here". The list comes from /api/config, so the server
+  // stays the one place that decides what is loadable.
+  const allowed = (deployConfig.accepted_extensions || []).map(e => e.toLowerCase());
+  const files = allowed.length
+    ? picked.filter(f => allowed.some(ext => f.name.toLowerCase().endsWith(ext)))
+    : picked;
 
   boardFiles.clear();
   files.forEach(f => boardFiles.set(f.name, f));
-
-  // webkitRelativePath is "<folder>/<...>/<name>"; its first segment is the
-  // only name we have for the folder the user picked.
-  const folderName = (files[0].webkitRelativePath || '').split('/')[0] || 'Project';
 
   el('#load-status').textContent = 'Reading folder...';
   try {
@@ -847,7 +863,7 @@ async function openBoardForFileList(fileList) {
       }),
     });
     el('#load-status').textContent = '';
-    showBoard(board);
+    showBoard(board, true);
   } catch (e) {
     el('#load-status').textContent = 'Error: ' + e.message;
     el('#load-status').className = 'error';
@@ -873,7 +889,7 @@ async function showEmptyBoard() {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ files: [] }),
     });
-    showBoard(board);
+    showBoard(board, false);
   } catch {
     content().innerHTML = WELCOME_HTML;  // no API - keep the static welcome
   }
@@ -1343,10 +1359,15 @@ async function applyDeployMode() {
   // them and no screen reader announces controls that cannot work.
   document.querySelectorAll('.local-only').forEach(n => n.remove());
 
+  // Chrome's own folder-picker dialog says "Upload N files to this site?",
+  // which is its wording for granting access, not a description of what
+  // happens. Saying so before the dialog appears is the difference between a
+  // reasonable prompt and an alarming one - these are client project folders.
   const hint = el('.browse-hint');
   if (hint) {
-    hint.textContent = `Pick an ETAP study result file to upload (up to ${cfg.max_upload_mb} MB). `
-      + 'It is read in a throwaway copy - your original is never modified.';
+    hint.innerHTML = 'Your browser will ask to &ldquo;upload&rdquo; the folder - it only reads the list of '
+      + 'file names. Nothing is sent until you open a study, and then only that one file '
+      + `(up to ${cfg.max_upload_mb} MB), read in a throwaway copy. Your originals are never modified.`;
   }
   const welcome = el('#welcome');
   if (welcome) {

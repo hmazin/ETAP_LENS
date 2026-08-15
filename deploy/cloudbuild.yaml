@@ -58,7 +58,11 @@ steps:
       # heard of. Raising this means moving that state to Firestore first.
       - --max-instances=1
       - --service-account=${_RUNTIME_SA}
-      - --set-env-vars=ETAP_LENS_MODE=hosted,ETAP_LENS_GCS_BUCKET=${_BUCKET},ETAP_LENS_CORS_ORIGINS=${_CORS_ORIGINS},ETAP_LENS_CORS_ORIGIN_REGEX=${_CORS_ORIGIN_REGEX}
+      # ^;^ switches --set-env-vars from its default comma separator to ";".
+      # _CORS_ORIGINS is itself a comma-separated list, so with the default
+      # gcloud reads its second origin as a variable name and fails with
+      # "Bad syntax for dict arg". Semicolon appears in none of these values.
+      - --set-env-vars=^;^ETAP_LENS_MODE=hosted;ETAP_LENS_GCS_BUCKET=${_BUCKET};ETAP_LENS_CORS_ORIGINS=${_CORS_ORIGINS};ETAP_LENS_CORS_ORIGIN_REGEX=${_CORS_ORIGIN_REGEX}
       # Turnstile keys are secrets, so they are attached separately:
       #   gcloud run services update ${_SERVICE} --region ${_REGION} \
       #     --set-secrets=ETAP_LENS_TURNSTILE_SECRET_KEY=turnstile-secret:latest
