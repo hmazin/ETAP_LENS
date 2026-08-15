@@ -645,7 +645,11 @@ def api_overview(project_id):
     ]
 
     result = {
-        "manifest": manifest,
+        # Sanitized, like every other manifest that leaves this process. The
+        # raw one carries the session id - a bearer token - along with the
+        # server's own paths, and this endpoint renders straight onto the
+        # overview page, so those were being displayed on screen.
+        "manifest": project_cache._public_manifest(manifest),
         "info_tables": info_tables,
         "equipment_counts": equipment_counts,
     }

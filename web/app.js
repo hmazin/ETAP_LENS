@@ -507,6 +507,28 @@ function miniTableHtml(rows) {
   </table></div>`;
 }
 
+/** Where this project came from, said in terms that mean something to whoever
+ *  loaded it.
+ *
+ *  An uploaded file has no path worth showing - the server's copy of it lives
+ *  in container scratch space under a directory named after the session, which
+ *  is a bearer token. A local file does have one, and it is the answer to
+ *  "which of these am I looking at". "Resolved database" only earns its row
+ *  when it differs from what was opened, which is the .oti case: a pointer
+ *  that resolved to the .MDF beside it.
+ */
+function sourceRows(m) {
+  const rows = [];
+  if (m.uploaded) {
+    rows.push(['Uploaded file', m.display_name || m.input_path]);
+  } else {
+    if (m.input_path) rows.push(['Opened', m.input_path]);
+    if (m.db_path && m.db_path !== m.input_path) rows.push(['Resolved database', m.db_path]);
+  }
+  if (m.note) rows.push(['Note', m.note]);
+  return rows;
+}
+
 /** Returns {html, collapsed} so the caller can push reference cards below the
  *  results instead of leaving them wherever the table order put them. */
 function infoCard(t) {
@@ -578,11 +600,7 @@ async function showOverview() {
 
     <div class="card">
       <h3>Source</h3>
-      <div class="kv-grid">
-        <div class="kv"><div class="k">Input path</div><div class="v">${fmtCell(m.input_path)}</div></div>
-        <div class="kv"><div class="k">Resolved database</div><div class="v">${fmtCell(m.db_path)}</div></div>
-        <div class="kv"><div class="k">Note</div><div class="v">${fmtCell(m.note)}</div></div>
-      </div>
+      ${kvGridHtml(sourceRows(m))}
     </div>
   `;
 

@@ -158,9 +158,12 @@ code { background: var(--accent-dim); padding: 1px 5px; border-radius: 4px; font
 .card h3 { margin: 0 0 10px; font-size: 14px; text-transform: uppercase; letter-spacing: .03em; color: var(--text-dim); }
 
 .kv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px 20px; }
-.kv-grid .kv { font-size: 13px; }
+/* min-width lets a cell shrink below its content, and the wrap breaks strings
+   with nowhere natural to break - a file path, a Windows share. Without both,
+   a long value runs straight out of its cell and over its neighbours. */
+.kv-grid .kv { font-size: 13px; min-width: 0; }
 .kv-grid .k { color: var(--text-dim); }
-.kv-grid .v { font-weight: 600; }
+.kv-grid .v { font-weight: 600; overflow-wrap: anywhere; }
 
 /* ---------- Overview info cards ----------
    Three shapes, because an info table is three different things: a single
