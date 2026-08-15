@@ -443,22 +443,113 @@ function truncationNotice(rowCount, shown) {
     rows only - use the summary tables for whole-run figures.</div>`;
 }
 
+// ---------- Overview info cards ----------
+// An info table is one of three different things and each needs its own
+// shape. Rendering them all as the first row's key/value pairs - which is
+// what this used to do - showed 4 rows out of the 83 these tables carry on a
+// time-domain study, while giving the whole page over to the one table that
+// really is a single record: ~100 raw study-case column names.
+
+/** A single-record table wider than this opens collapsed. Study-case records
+ *  run to ~100 columns of solver settings: real reference data, but not what
+ *  you opened the overview to read. */
+const WIDE_RECORD_FIELDS = 24;
+
+const INFO_NOISE_COLUMNS = ['IID', 'Revision', 'DataRevs', 'Issue'];
+
+function infoPairs(row) {
+  return Object.entries(row)
+    .filter(([k, v]) => v !== null && v !== '' && !INFO_NOISE_COLUMNS.includes(k));
+}
+
+/** Thousands separators for readability, without inventing or dropping
+ *  precision. Small magnitudes are left exactly as they arrived: ETAP stores
+ *  results as single precision and a loss of 0.000003 MW is the real value,
+ *  not a rounding artifact to tidy away. */
+function fmtInfoValue(v) {
+  if (typeof v === 'number' && Number.isFinite(v)) {
+    if (Number.isInteger(v)) return v.toLocaleString();
+    const abs = Math.abs(v);
+    if (abs >= 1000) return v.toLocaleString(undefined, { maximumFractionDigits: 1 });
+    if (abs >= 1) return v.toLocaleString(undefined, { maximumFractionDigits: 3 });
+  }
+  return fmtCell(v);
+}
+
+function kvGridHtml(pairs) {
+  return `<div class="kv-grid">${pairs.map(([k, v]) =>
+    `<div class="kv"><div class="k">${esc(k)}</div><div class="v">${fmtInfoValue(v)}</div></div>`).join('')}</div>`;
+}
+
+/** Metric/Unit/Value tables are written to be read like a report, and ETAP's
+ *  own conventions come through in the rows: a blank Metric is a spacer, and
+ *  "-- ... --" is a section heading. Honour both rather than rendering them
+ *  as empty table rows. */
+function isMetricTable(rows) {
+  const cols = Object.keys(rows[0] || {});
+  return cols.length === 3 && ['Metric', 'Unit', 'Value'].every(c => cols.includes(c));
+}
+
+function metricListHtml(rows) {
+  return `<div class="metric-list">${rows.map(r => {
+    const name = String(r.Metric ?? '').trim();
+    if (!name) return '<div class="metric-gap"></div>';
+    const section = name.match(/^--\s*(.*?)\s*--$/);
+    if (section) return `<div class="metric-section">${esc(section[1])}</div>`;
+    const unit = String(r.Unit ?? '').trim();
+    return `<div class="metric-row"><span class="metric-name">${esc(name)}</span>`
+      + `<span class="metric-val">${fmtInfoValue(r.Value)}`
+      + (unit ? ` <span class="metric-unit">${esc(unit)}</span>` : '') + '</span></div>';
+  }).join('')}</div>`;
+}
+
+function miniTableHtml(rows) {
+  const cols = Object.keys(rows[0]).filter(c => !INFO_NOISE_COLUMNS.includes(c));
+  return `<div class="mini-scroll"><table class="mini-table">
+    <thead><tr>${cols.map(c => `<th>${esc(c)}</th>`).join('')}</tr></thead>
+    <tbody>${rows.map(r =>
+      `<tr>${cols.map(c => `<td>${fmtInfoValue(r[c])}</td>`).join('')}</tr>`).join('')}</tbody>
+  </table></div>`;
+}
+
+/** Returns {html, collapsed} so the caller can push reference cards below the
+ *  results instead of leaving them wherever the table order put them. */
+function infoCard(t) {
+  const rows = t.rows || [];
+  if (!rows.length) return null;
+
+  if (rows.length === 1) {
+    const pairs = infoPairs(rows[0]);
+    if (!pairs.length) return null;
+    if (pairs.length > WIDE_RECORD_FIELDS) {
+      return {
+        collapsed: true,
+        html: `<div class="card"><details class="info-details">
+                 <summary><h3>${esc(t.title)}</h3>
+                   <span class="detail-count">${pairs.length} fields</span></summary>
+                 ${kvGridHtml(pairs)}</details></div>`,
+      };
+    }
+    return { collapsed: false, html: `<div class="card"><h3>${esc(t.title)}</h3>${kvGridHtml(pairs)}</div>` };
+  }
+
+  const body = isMetricTable(rows) ? metricListHtml(rows) : miniTableHtml(rows);
+  return {
+    collapsed: false,
+    html: `<div class="card"><h3>${esc(t.title)}
+             <span class="detail-count">${rows.length} rows</span></h3>${body}</div>`,
+  };
+}
+
 async function showOverview() {
   content().innerHTML = '<div class="loading">Loading overview...</div>';
   const data = await api(`/api/project/${currentProjectId}/overview`);
   const m = currentManifest = data.manifest;
   const categorySet = m.category_set || 'model';
 
-  const kv = (obj) => Object.entries(obj)
-    .filter(([k, v]) => v !== null && v !== '' && !['IID', 'Revision', 'DataRevs', 'Issue'].includes(k))
-    .map(([k, v]) => `<div class="kv"><div class="k">${k}</div><div class="v">${fmtCell(v)}</div></div>`)
-    .join('');
-
-  const infoCards = data.info_tables.map(t => {
-    const row = t.rows[0] || {};
-    return Object.keys(row).length
-      ? `<div class="card"><h3>${t.title}</h3><div class="kv-grid">${kv(row)}</div></div>` : '';
-  }).join('');
+  const cards = data.info_tables.map(infoCard).filter(Boolean);
+  const infoCards = cards.filter(c => !c.collapsed).map(c => c.html).join('')
+                  + cards.filter(c => c.collapsed).map(c => c.html).join('');
 
   content().innerHTML = `
     <div class="page-title-row">

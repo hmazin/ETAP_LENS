@@ -162,6 +162,56 @@ code { background: var(--accent-dim); padding: 1px 5px; border-radius: 4px; font
 .kv-grid .k { color: var(--text-dim); }
 .kv-grid .v { font-weight: 600; }
 
+/* ---------- Overview info cards ----------
+   Three shapes, because an info table is three different things: a single
+   record (key/value), a Metric/Unit/Value report (a labelled list), or an
+   ordinary multi-row table. */
+
+.card h3 .detail-count {
+  float: right; font-weight: 400; text-transform: none; letter-spacing: 0;
+  font-size: 12px; color: var(--text-dim);
+}
+
+.metric-list { display: flex; flex-direction: column; }
+.metric-row {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 16px;
+  padding: 5px 0; border-bottom: 1px solid var(--border); font-size: 13px;
+}
+.metric-row:last-child { border-bottom: none; }
+.metric-name { color: var(--text-dim); }
+.metric-val { font-weight: 600; white-space: nowrap; text-align: right; }
+.metric-unit { font-weight: 400; color: var(--text-dim); font-size: 12px; }
+/* ETAP writes blank rows as report spacers and "-- ... --" as section heads. */
+.metric-gap { height: 10px; }
+.metric-section {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .05em; font-weight: 600;
+  color: var(--text-dim); padding: 10px 0 4px; border-bottom: 1px solid var(--border);
+}
+
+.mini-scroll { overflow-x: auto; }
+table.mini-table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+table.mini-table th, table.mini-table td {
+  padding: 5px 12px 5px 0; border-bottom: 1px solid var(--border);
+  text-align: left; white-space: nowrap;
+}
+table.mini-table th {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--text-dim); font-weight: 600;
+}
+table.mini-table tbody tr:last-child td { border-bottom: none; }
+table.mini-table tbody tr:hover { background: var(--accent-dim); }
+
+.info-details > summary {
+  cursor: pointer; list-style: none; display: block;
+}
+.info-details > summary::-webkit-details-marker { display: none; }
+.info-details > summary h3 { display: inline; }
+.info-details > summary h3::before { content: "\25B8\00a0"; color: var(--text-dim); }
+.info-details[open] > summary h3::before { content: "\25BE\00a0"; }
+.info-details > summary:hover h3 { color: var(--accent); }
+.info-details > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.info-details[open] > summary { margin-bottom: 10px; }
+
 .stat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; }
 .stat-card {
   background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px;
