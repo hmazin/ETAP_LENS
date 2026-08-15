@@ -1458,6 +1458,14 @@ function mountTurnstile(siteKey) {
   s.onload = () => {
     turnstileWidgetId = window.turnstile.render(host, {
       sitekey: siteKey, size: 'flexible', appearance: 'interaction-only',
+      // Tokens expire after ~5 minutes. Someone who opens a project folder,
+      // reads the board and then picks a study is easily past that, and
+      // without these the first thing they'd see is the upload refused for
+      // "timeout-or-duplicate" - a verification failure they did not cause
+      // and cannot act on. Re-issue quietly instead.
+      'expired-callback': () => resetTurnstile(),
+      'timeout-callback': () => resetTurnstile(),
+      'error-callback': () => resetTurnstile(),
     });
   };
   document.head.appendChild(s);
