@@ -176,6 +176,34 @@ def _public_manifest(m: dict) -> dict:
     return out
 
 
+def db_path_index(session_id: str = None) -> dict:
+    """{lowercased db_path: project_id} for everything already analyzed.
+
+    The board uses this to tell a tile it can open straight away from one that
+    has to be analyzed first. Looking caches up by the path they were built
+    from rather than by recomputing the id keeps working across changes to the
+    id scheme - caches written before the session hash went into the key are
+    still found, and would otherwise show as un-analyzed forever.
+    """
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    hydrate_session(session_id)
+    index = {}
+    for fn in os.listdir(CACHE_DIR):
+        if not fn.endswith(".json"):
+            continue
+        try:
+            with open(os.path.join(CACHE_DIR, fn), "r", encoding="utf-8") as f:
+                m = json.load(f)
+        except (OSError, ValueError):
+            continue
+        if session_id is not None and m.get("session_id", sessions.SHARED) != session_id:
+            continue
+        db_path = m.get("db_path")
+        if db_path and m.get("project_id"):
+            index[os.path.abspath(db_path).lower()] = m["project_id"]
+    return index
+
+
 def get_manifest(project_id: str, session_id: str = None):
     """Load a manifest, enforcing session ownership.
 

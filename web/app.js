@@ -689,6 +689,196 @@ function buildCategoryMenu(categories) {
   });
 }
 
+// ---------- Module board ----------
+// What a project folder contains, grouped the way an engineer thinks about it
+// rather than by file extension. Building it is cheap by design - a directory
+// listing, no study file opened - so pointing at a folder costs nothing and
+// you only pay for the module you actually open.
+
+let currentBoard = null;
+// filename -> File. Only used on a hosted instance, where the browser holds
+// the sole handle to the file and the server has never seen the folder.
+let boardFiles = new Map();
+
+const BOARD_STATE_COPY = {
+  no_results: ['No results', 'Run this study in ETAP'],
+  unsupported: ['Not supported yet', ''],
+  unavailable: ['Desktop app only', 'Reading a project model needs SQL Server'],
+  too_large: ['Too large to upload', 'Use the desktop app for this one'],
+};
+
+function fmtBytes(n) {
+  if (n === null || n === undefined) return '';
+  return n >= 1e9 ? (n / 1e9).toFixed(1) + ' GB' : Math.max(1, Math.round(n / 1e6)) + ' MB';
+}
+
+function esc(s) {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+}
+
+function boardTileHtml(m, isEmpty) {
+  const [big, sub] = BOARD_STATE_COPY[m.state] || ['', ''];
+  let body;
+
+  if (isEmpty) {
+    body = '<div class="tile-big">&mdash;</div>';
+  } else if (m.files.length) {
+    body = '<div class="tile-files">' + m.files.map(f => {
+      const action = f.error ? 'unresolved'
+        : f.too_large ? 'too large'
+        : f.analyzed ? 'Open'
+        : fmtBytes(f.size);
+      const blocked = f.too_large || f.error;
+      return `<button class="tile-file${f.analyzed ? ' is-analyzed' : ''}"
+                data-module="${esc(m.key)}" data-file="${esc(f.filename)}" ${blocked ? 'disabled' : ''}
+                title="${esc(f.filename)}">
+                <span class="tf-name">${esc(f.variant)}</span>
+                <span class="tf-meta">${esc(action)}</span>
+              </button>`;
+    }).join('') + '</div>';
+  } else {
+    body = `<div class="tile-big">${esc(big)}</div>` + (sub ? `<div class="tile-sub">${esc(sub)}</div>` : '');
+  }
+
+  const dim = isEmpty || !m.files.length;
+  const foot = m.files.length && !isEmpty
+    ? `${m.files.length} file${m.files.length > 1 ? 's' : ''}`
+    : (m.etap_tag ? `ETAP ${esc(m.etap_tag)}` : '&nbsp;');
+
+  return `<div class="tile${dim ? ' dim' : ''}" data-state="${esc(m.state)}">
+            <div class="tile-mod">${esc(m.label)}</div>
+            ${body}
+            <div class="tile-foot">${foot}</div>
+          </div>`;
+}
+
+function showBoard(board) {
+  currentBoard = board;
+  currentProjectId = null;
+  el('#menu').classList.add('hidden');
+  setActiveMenu(null);
+
+  const isEmpty = !board.folder && board.total_files === 0;
+  const sub = isEmpty
+    ? 'Open a project folder to see what studies it contains.'
+    : `${board.total_files} loadable file${board.total_files === 1 ? '' : 's'}`
+      + (board.folder ? ` &middot; ${esc(board.folder)}` : '');
+
+  content().innerHTML = `
+    <div class="board-head">
+      <div>
+        <div class="page-title">${isEmpty ? 'ETAP Lens' : esc(board.name)}</div>
+        <div class="page-desc">${sub}</div>
+      </div>
+      <button id="board-change-btn" class="board-change">
+        ${isEmpty ? 'Open project folder' : 'Open another folder'}</button>
+    </div>
+    <div class="board">${board.modules.map(m => boardTileHtml(m, isEmpty)).join('')}</div>
+    ${isEmpty ? '' : `<div class="board-note">Nothing is read until you open a study.
+       Opening one analyzes that file only.</div>`}
+  `;
+
+  el('#board-change-btn').addEventListener('click', openProjectFolder);
+  content().querySelectorAll('.tile-file').forEach(btn => {
+    btn.addEventListener('click', () => openBoardFile(btn.dataset.module, btn.dataset.file, btn));
+  });
+}
+
+/** Open a module's file: activate it if already analyzed, otherwise analyze it. */
+async function openBoardFile(moduleKey, filename, btn) {
+  const mod = currentBoard?.modules.find(m => m.key === moduleKey);
+  const f = mod?.files.find(x => x.filename === filename);
+  if (!f) return;
+
+  if (f.project_id) {
+    await activateProject(f.project_id);
+    return;
+  }
+
+  btn.classList.add('is-working');
+  btn.querySelector('.tf-meta').textContent = 'Analyzing...';
+  if (f.path) {
+    // Local: the server can reach the file, so nothing is transferred.
+    await loadPathDirectly(f.path);
+  } else {
+    const file = boardFiles.get(filename);
+    if (!file) {
+      btn.querySelector('.tf-meta').textContent = 'not found';
+      return;
+    }
+    await uploadAndLoad(file);
+  }
+}
+
+async function openBoardForPath(path) {
+  el('#load-status').textContent = 'Reading folder...';
+  el('#load-status').className = '';
+  try {
+    const board = await api(`/api/board?path=${encodeURIComponent(path)}`);
+    el('#load-status').textContent = '';
+    boardFiles.clear();
+    showBoard(board);
+  } catch (e) {
+    el('#load-status').textContent = 'Error: ' + e.message;
+    el('#load-status').className = 'error';
+  }
+}
+
+/** Hosted path: the browser enumerated the folder, so only names and sizes
+ *  are sent. No file content leaves the machine until a tile is opened. */
+async function openBoardForFileList(fileList) {
+  const files = [...fileList];
+  if (!files.length) return;
+
+  boardFiles.clear();
+  files.forEach(f => boardFiles.set(f.name, f));
+
+  // webkitRelativePath is "<folder>/<...>/<name>"; its first segment is the
+  // only name we have for the folder the user picked.
+  const folderName = (files[0].webkitRelativePath || '').split('/')[0] || 'Project';
+
+  el('#load-status').textContent = 'Reading folder...';
+  try {
+    const board = await api('/api/board/scan', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        folder: folderName,
+        files: files.map(f => ({ name: f.name, size: f.size, mtime: f.lastModified })),
+      }),
+    });
+    el('#load-status').textContent = '';
+    showBoard(board);
+  } catch (e) {
+    el('#load-status').textContent = 'Error: ' + e.message;
+    el('#load-status').className = 'error';
+  }
+}
+
+/** One button, two mechanisms. Locally the server can read a real path, so we
+ *  use the in-app browser that yields one. Hosted, only the browser can see
+ *  the folder, so we use the directory picker. */
+function openProjectFolder() {
+  if (deployConfig.local_filesystem === false) {
+    el('#dir-input').click();
+  } else {
+    openFolderBrowser(el('#path-input')?.value.trim());
+  }
+}
+
+/** First run: the board with every module dimmed, so the tool shows what it
+ *  can do before anything is loaded. */
+async function showEmptyBoard() {
+  try {
+    const board = await api('/api/board/scan', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ files: [] }),
+    });
+    showBoard(board);
+  } catch {
+    content().innerHTML = WELCOME_HTML;  // no API - keep the static welcome
+  }
+}
+
 async function activateProject(projectId) {
   currentProjectId = projectId;
   el('#menu').classList.remove('hidden');
@@ -703,7 +893,10 @@ function resetToWelcome() {
   currentProjectId = null;
   currentManifest = null;
   el('#menu').classList.add('hidden');
-  content().innerHTML = WELCOME_HTML;
+  // Home is the board now. Go back to the folder we were looking at if there
+  // is one, so unloading a study leaves you where you opened it from.
+  if (currentBoard) showBoard(currentBoard);
+  else content().innerHTML = WELCOME_HTML;
 }
 
 async function unloadProject(projectId) {
@@ -782,23 +975,6 @@ async function pollJob(jobId) {
   }
 }
 
-function renderPathCandidates(candidates) {
-  const box = el('#path-candidates');
-  if (candidates.length === 0) {
-    box.innerHTML = `<div class="browse-error">No .oti/.mdf/.bak/study-result files found directly inside that folder.</div>`;
-    return;
-  }
-  box.innerHTML = `<div class="candidates-label">Found ${candidates.length} loadable file(s) - click to load:</div>` +
-    candidates.map((c, i) => `
-      <div class="candidate-item" data-idx="${i}">
-        <span>${c.filename}${c.error ? '' : `<span class="cand-type">${c.label}</span>`}</span>
-        <span class="sz">${c.error ? 'unresolved' : (c.size / 1e6).toFixed(1) + ' MB'}</span>
-      </div>`).join('');
-  box.querySelectorAll('.candidate-item').forEach((item, i) => {
-    item.addEventListener('click', () => loadPathDirectly(candidates[i].path));
-  });
-}
-
 async function loadPathDirectly(path) {
   setLoadersDisabled(true);
   el('#load-status').textContent = 'Starting...';
@@ -828,9 +1004,10 @@ async function loadOrScanPath(path) {
       body: JSON.stringify({ path }),
     });
     if (data.is_folder) {
+      // A folder is a project, not a pick-one list - show its board.
       el('#load-status').textContent = '';
-      renderPathCandidates(data.candidates);
       setLoadersDisabled(false);
+      await openBoardForPath(data.folder);
     } else {
       pollJob(data.job_id);
     }
@@ -1088,13 +1265,12 @@ function renderFsList(data) {
   }));
 }
 
-el('#fs-browse-btn').addEventListener('click', () => openFolderBrowser(el('#path-input').value.trim()));
 el('#fs-modal-close').addEventListener('click', closeFolderBrowser);
 el('#fs-select-folder-btn').addEventListener('click', () => {
   if (!fsCurrentPath) return;
   el('#path-input').value = fsCurrentPath;
   closeFolderBrowser();
-  loadOrScanPath(fsCurrentPath);
+  openBoardForPath(fsCurrentPath);
 });
 el('#fs-modal').addEventListener('click', (e) => { if (e.target.id === 'fs-modal') closeFolderBrowser(); });
 document.addEventListener('keydown', (e) => {
@@ -1186,6 +1362,15 @@ async function applyDeployMode() {
   }
 }
 
+el('#open-folder-btn').addEventListener('click', openProjectFolder);
+
+// Picking a directory does not upload it: the browser hands us the file list
+// locally and only the file behind an opened tile is ever sent.
+el('#dir-input').addEventListener('change', (e) => {
+  openBoardForFileList(e.target.files);
+  e.target.value = '';
+});
+
 // Config first: it decides which controls exist, and the project list is
 // scoped by the session header that every call now carries.
-applyDeployMode().then(refreshRecentProjects);
+applyDeployMode().then(refreshRecentProjects).then(showEmptyBoard);

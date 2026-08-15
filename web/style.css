@@ -300,6 +300,61 @@ table.data-table tfoot td.stat-label {
 .tables-list .t-row:hover { background: var(--accent-dim); }
 .tables-list .t-row .cat-tag { font-size: 10.5px; color: var(--accent); }
 
+/* ---------- Module board ----------
+   One tile per ETAP module, always in the same position. Modules we cannot
+   read keep their tile (dimmed) on purpose: "this project has no harmonics
+   study" and "this tool doesn't read harmonics" are different answers, and
+   hiding the second one makes them look identical. */
+
+.board-head {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  gap: 16px; flex-wrap: wrap; margin-bottom: 18px;
+}
+.board-change {
+  flex-shrink: 0; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--panel); color: var(--text); font-size: 12.5px; cursor: pointer; white-space: nowrap;
+}
+.board-change:hover { border-color: var(--accent); color: var(--accent); }
+
+.board {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(215px, 1fr)); gap: 12px;
+}
+
+.tile {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  padding: 14px 16px 12px; display: flex; flex-direction: column; min-height: 152px;
+}
+.tile-mod {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--text-dim); font-weight: 600; margin-bottom: 10px;
+}
+.tile-big { font-size: 15px; font-weight: 600; line-height: 1.3; }
+.tile-sub { font-size: 12px; color: var(--text-dim); margin-top: 3px; line-height: 1.4; }
+.tile-foot {
+  margin-top: auto; padding-top: 10px; border-top: 1px solid var(--border);
+  font-size: 11px; color: var(--text-dim);
+}
+
+.tile.dim { background: transparent; border-style: dashed; }
+.tile.dim .tile-big { color: var(--text-dim); font-weight: 500; font-size: 13.5px; }
+
+.tile-files { display: flex; flex-direction: column; gap: 6px; }
+.tile-file {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+  text-align: left; font-family: inherit; font-size: 13px; color: var(--text);
+  background: var(--accent-dim); border: 1px solid transparent; border-radius: 6px;
+  padding: 7px 10px; cursor: pointer;
+}
+.tile-file:hover:not(:disabled) { border-color: var(--accent); }
+.tile-file:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tile-file:disabled { opacity: .55; cursor: default; }
+.tile-file.is-working { opacity: .7; cursor: progress; }
+.tile-file .tf-name { font-weight: 600; }
+.tile-file .tf-meta { font-size: 11.5px; color: var(--text-dim); white-space: nowrap; }
+.tile-file.is-analyzed .tf-meta { color: var(--accent); font-weight: 600; }
+
+.board-note { margin-top: 18px; font-size: 12.5px; color: var(--text-dim); }
+
 /* In-app folder browser modal */
 .fs-modal {
   position: fixed; inset: 0; background: #00000066; display: flex; align-items: center;

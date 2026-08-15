@@ -54,6 +54,7 @@ def scan_folder(folder_path: str):
         candidates.append({
             "path": full, "filename": fn, "kind": located.kind,
             "label": _label_for(located), "size": os.path.getsize(full),
+            "db_path": located.db_path,
         })
 
     # Pass 2: .oti pointers - only add if they resolve to something not
@@ -76,6 +77,7 @@ def scan_folder(folder_path: str):
         candidates.append({
             "path": full, "filename": fn, "kind": located.kind,
             "label": _label_for(located), "size": os.path.getsize(located.db_path),
+            "db_path": located.db_path,
         })
 
     candidates.sort(key=lambda c: (_rank(c["kind"]), c["filename"].lower()))

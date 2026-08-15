@@ -19,8 +19,9 @@ from werkzeug.utils import secure_filename
 
 from etap_reader import appconfig
 from etap_reader import categories as cat_defs
-from etap_reader import (browse_fs, folder_scan, locate, project_cache, sessions,
-                         sld_graph, storage, turnstile, upload_guard, xlsx_export)
+from etap_reader import (board, browse_fs, folder_scan, locate, project_cache,
+                         sessions, sld_graph, storage, turnstile, upload_guard,
+                         xlsx_export)
 
 # The frontend is a plain static app (no templating, no build step) so it can
 # be served either from here - the local desktop case, same origin as the API -
@@ -176,6 +177,47 @@ def api_config():
 @with_session
 def api_projects():
     return jsonify(project_cache.list_projects(scoped_session()))
+
+
+@app.route("/api/board")
+@local_only
+@with_session
+def api_board():
+    """What a project folder contains, grouped by ETAP module.
+
+    Cheap by construction: a directory listing plus the .OTI pointers needed to
+    resolve which database a model uses. No study file is opened here.
+    """
+    path = request.args.get("path", "").strip().strip('"')
+    if not path:
+        return jsonify({"error": "path is required"}), 400
+    if not os.path.isdir(path):
+        return jsonify({"error": f"Not a folder: {path}"}), 400
+    try:
+        return jsonify(board.from_folder(path, scoped_session()))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/board/scan", methods=["POST"])
+@with_session
+def api_board_scan():
+    """Board built from a listing the browser enumerated locally.
+
+    The hosted path. The body carries names, sizes and dates only - the folder
+    is read on the engineer's machine and no file content is sent until they
+    open a tile.
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    entries = data.get("files")
+    if not isinstance(entries, list):
+        return jsonify({"error": "files must be a list"}), 400
+    if len(entries) > 5000:
+        # A project folder holds tens of files. Anything at this scale is a
+        # mistake (a drive root, say) and the answer would be useless anyway.
+        return jsonify({"error": "Too many files - pick a project folder rather than a drive."}), 400
+    return jsonify(board.from_listing(entries, scoped_session(),
+                                      folder_name=(data.get("folder") or "").strip()))
 
 
 @app.route("/api/browse")

@@ -19,18 +19,20 @@
       </div>
 
       <div id="loader-box">
-        <label class="browse-label">Find a project or study file</label>
-        <button id="fs-browse-btn" class="local-only">&#128449; Browse Folders...</button>
-        <button id="browse-btn">&#128193; Browse for single file...</button>
+        <label class="browse-label">Open an ETAP project</label>
+        <button id="open-folder-btn">&#128193; Open project folder</button>
+        <button id="browse-btn">Open a single file...</button>
         <input id="folder-input" type="file" accept=".oti,.mdf,.bak,.sa1s,.sa2s,.lf1s,.ul1s,.tu1s" multiple class="hidden">
-        <div class="browse-hint">"Browse Folders" lets you navigate into subfolders and pick a file, all inside
-          this page. "Browse for single file" opens the normal OS file picker if you already know exactly which
-          file you want. Tip: if you only see/pick the <code>.oti</code> there, hold Ctrl and also click the
-          matching <code>.MDF</code> (or <code>.BAK</code>) in the same folder - the .oti alone has no data.</div>
+        <!-- webkitdirectory reads the folder on this machine and hands
+             JavaScript the file list. Nothing is uploaded by picking it - only
+             opening a module sends a file. -->
+        <input id="dir-input" type="file" webkitdirectory directory class="hidden">
+        <div class="browse-hint">Pick the folder your ETAP project lives in. The folder is read on this
+          machine - nothing is opened or sent until you choose a study.</div>
         <div id="browse-candidates" class="candidate-box"></div>
 
-        <div class="or-divider local-only">or paste a file or folder path</div>
-        <input id="path-input" class="local-only" type="text" placeholder="G:\...\ETAP Model 24  (a folder works too)" autocomplete="off">
+        <div class="or-divider local-only">or paste a path</div>
+        <input id="path-input" class="local-only" type="text" placeholder="G:\...\ETAP Model 24" autocomplete="off">
         <button id="load-btn" class="secondary local-only">Load</button>
         <div id="path-candidates" class="candidate-box local-only"></div>
 
