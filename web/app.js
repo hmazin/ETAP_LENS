@@ -807,6 +807,19 @@ function esc(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 }
 
+/** Dates on a tile are for telling repeat runs of one study apart, so the
+ *  useful precision is the day - and the time too when it was today. */
+function fmtWhen(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const today = new Date();
+  const sameDay = d.toDateString() === today.toDateString();
+  return sameDay
+    ? d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+    : d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
 function boardTileHtml(m, isEmpty) {
   const [big, sub] = BOARD_STATE_COPY[m.state] || ['', ''];
   let body;
@@ -814,17 +827,31 @@ function boardTileHtml(m, isEmpty) {
   if (isEmpty) {
     body = '<div class="tile-big">&mdash;</div>';
   } else if (m.files.length) {
+    // ETAP names a result file after the study case, so the stem is what
+    // distinguishes one run from another - fourteen unbalanced load flows
+    // all carry the same variant label and the same extension. Lead with the
+    // name, and keep the date, because picking among repeat runs of one study
+    // is usually a question of which was run last.
+    const oneVariant = new Set(m.files.map(f => f.variant)).size === 1;
     body = '<div class="tile-files">' + m.files.map(f => {
       const action = f.error ? 'unresolved'
         : f.too_large ? 'too large'
         : f.analyzed ? 'Open'
         : fmtBytes(f.size);
       const blocked = f.too_large || f.error;
+      const sub = [
+        oneVariant ? '' : f.variant,
+        f.subfolder ? esc(f.subfolder) + '/' : '',
+        fmtWhen(f.mtime),
+      ].filter(Boolean).join(' &middot; ');
       return `<button class="tile-file${f.analyzed ? ' is-analyzed' : ''}"
-                data-module="${esc(m.key)}" data-file="${esc(f.filename)}" ${blocked ? 'disabled' : ''}
-                title="${esc(f.filename)}">
-                <span class="tf-name">${esc(f.variant)}</span>
-                <span class="tf-meta">${esc(action)}</span>
+                data-module="${esc(m.key)}" data-file="${esc(boardFileKey(f))}" ${blocked ? 'disabled' : ''}
+                title="${esc(f.rel || f.filename)}">
+                <span class="tf-line">
+                  <span class="tf-name">${esc(f.name || f.filename)}</span>
+                  <span class="tf-meta">${esc(action)}</span>
+                </span>
+                ${sub ? `<span class="tf-sub">${sub}</span>` : ''}
               </button>`;
     }).join('') + '</div>';
   } else {
@@ -880,10 +907,16 @@ function showBoard(board, hasFolder = null) {
   });
 }
 
+/** What identifies one file on the board. The relative path where we have it,
+ *  because a recursive folder pick can hold the same filename twice. */
+function boardFileKey(f) {
+  return f.rel || f.path || f.filename;
+}
+
 /** Open a module's file: activate it if already analyzed, otherwise analyze it. */
-async function openBoardFile(moduleKey, filename, btn) {
+async function openBoardFile(moduleKey, key, btn) {
   const mod = currentBoard?.modules.find(m => m.key === moduleKey);
-  const f = mod?.files.find(x => x.filename === filename);
+  const f = mod?.files.find(x => boardFileKey(x) === key);
   if (!f) return;
 
   if (f.project_id) {
@@ -897,7 +930,7 @@ async function openBoardFile(moduleKey, filename, btn) {
     // Local: the server can reach the file, so nothing is transferred.
     await loadPathDirectly(f.path);
   } else {
-    const file = boardFiles.get(filename);
+    const file = boardFiles.get(f.rel || f.filename);
     if (!file) {
       btn.querySelector('.tf-meta').textContent = 'not found';
       return;
@@ -941,8 +974,11 @@ async function openBoardForFileList(fileList) {
     ? picked.filter(f => allowed.some(ext => f.name.toLowerCase().endsWith(ext)))
     : picked;
 
+  // Keyed by relative path, not name: the picker is recursive, so two
+  // subfolders can each hold a file called SC_Max.SA2S and keying by name
+  // would open whichever was stored last.
   boardFiles.clear();
-  files.forEach(f => boardFiles.set(f.name, f));
+  files.forEach(f => boardFiles.set(f.webkitRelativePath || f.name, f));
 
   el('#load-status').textContent = 'Reading folder...';
   try {
@@ -950,7 +986,10 @@ async function openBoardForFileList(fileList) {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         folder: folderName,
-        files: files.map(f => ({ name: f.name, size: f.size, mtime: f.lastModified })),
+        files: files.map(f => ({
+          name: f.name, size: f.size, mtime: f.lastModified,
+          rel: f.webkitRelativePath || '',
+        })),
       }),
     });
     el('#load-status').textContent = '';

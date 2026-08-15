@@ -22,9 +22,36 @@ from . import appconfig, folder_scan, modules, project_cache
 
 
 def _iso(ts):
+    """Normalize a modification time to ISO, whoever supplied it.
+
+    from_folder() has a POSIX timestamp in seconds; the browser's File API
+    gives milliseconds. Left unnormalized these reach the client in two
+    different shapes, and a tile cannot show one date format for a study
+    someone opened locally and another for the same study uploaded.
+    """
     if not ts:
         return None
-    return time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(ts))
+    if isinstance(ts, str):
+        return ts
+    ts = float(ts)
+    if ts > 1e11:  # milliseconds since epoch, not seconds
+        ts /= 1000.0
+    try:
+        return time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(ts))
+    except (ValueError, OSError):
+        return None
+
+
+def _subfolder(rel):
+    """Where inside the picked folder a file sits, "" for the top level.
+
+    webkitRelativePath is "<picked folder>/<...>/<name>"; the first segment is
+    the folder the user chose and the last is the file, so what is left is the
+    part worth showing on a tile."""
+    if not rel:
+        return ""
+    parts = [p for p in rel.replace("\\", "/").split("/") if p]
+    return "/".join(parts[1:-1])
 
 
 def _too_large(size) -> bool:
@@ -33,9 +60,19 @@ def _too_large(size) -> bool:
     return bool(appconfig.IS_HOSTED and size and size > appconfig.MAX_UPLOAD_BYTES)
 
 
-def _file(filename, size, mtime, path=None, project_id=None, error=None):
+def _file(filename, size, mtime, path=None, project_id=None, error=None, rel=None):
     return {
         "filename": filename,
+        # The browser's directory picker is recursive, so two subfolders can
+        # each hold a "SC_Max.SA2S". This is what tells them apart, and what
+        # the client keys its File handles by - matching on the bare filename
+        # would open whichever one it happened to store last.
+        "rel": rel,
+        "subfolder": _subfolder(rel),
+        # ETAP names a result file after the study case that produced it, so
+        # the stem is the only thing telling fourteen unbalanced load flows
+        # apart - the extension is identical across all of them.
+        "name": os.path.splitext(filename)[0],
         "path": path,
         "module": modules.module_for(filename),
         "variant": modules.variant_label(filename),
@@ -104,7 +141,8 @@ def from_listing(entries, session_id: str = None, folder_name: str = "") -> dict
         if not name or not modules.module_for(name):
             continue
         files.append(_file(name, e.get("size"), e.get("mtime"),
-                           project_id=known.get(name.lower())))
+                           project_id=known.get(name.lower()),
+                           rel=(e.get("rel") or "").strip() or None))
 
     # The client knows which File object each name refers to; the server never
     # sees one, so `path` stays null and the tile uploads on click.
@@ -119,6 +157,11 @@ def _assemble(folder, name, files, mode) -> dict:
     out = []
     for m in modules.MODULES:
         mine = by_module.get(m["key"], [])
+        # Group by variant, then newest first. A folder can hold a dozen runs
+        # of the same study type, and the one you want is usually the one you
+        # ran last. Two passes rather than one composite key: sort is stable,
+        # so the second ordering survives inside each group of the first.
+        mine.sort(key=lambda f: (f["mtime"] or "", f["name"].lower()), reverse=True)
         mine.sort(key=lambda f: f["variant"])
         out.append({
             "key": m["key"],
