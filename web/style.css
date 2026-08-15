@@ -134,6 +134,27 @@ nav#menu { display: flex; flex-direction: column; gap: 2px; }
 
 #content { flex: 1; padding: 28px 34px; overflow-x: hidden; overflow-y: auto; max-height: 100vh; }
 
+/* ---------- Breadcrumb ----------
+   The site is three levels deep - board, study, view - and every page below
+   the board shows the whole path with each step above it clickable. */
+#crumbs {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+  margin-bottom: 14px; font-size: 12.5px;
+}
+.crumb {
+  background: none; border: none; padding: 2px 0; font-family: inherit; font-size: 12.5px;
+  color: var(--accent); cursor: pointer; border-radius: 4px;
+}
+.crumb:hover { text-decoration: underline; }
+.crumb:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.crumb-here { color: var(--text-dim); cursor: default; }
+.crumb-here:hover { text-decoration: none; }
+.crumb-sep { color: var(--text-dim); }
+
+/* The sidebar's own way back, for when the breadcrumb has scrolled away. */
+.menu-item.back-item { color: var(--sidebar-text-dim); margin-bottom: 4px; }
+.menu-item.back-item:hover { color: #fff; }
+
 #welcome { max-width: 640px; margin-top: 40px; }
 #welcome h1 { font-size: 24px; }
 #welcome p { color: var(--text-dim); line-height: 1.5; }

@@ -5,7 +5,9 @@ let currentManifest = null;
 let deployConfig = {};
 
 const el = (sel) => document.querySelector(sel);
-const content = () => el('#content');
+// Views replace this wholesale. The breadcrumb lives in a sibling so it
+// survives every navigation without each view having to redraw it.
+const content = () => el('#view');
 const WELCOME_HTML = content().innerHTML; // captured before any project replaces it
 
 function fmtCell(v) {
@@ -415,6 +417,53 @@ function setActiveMenu(view) {
   document.querySelectorAll('.menu-item').forEach(b => b.classList.toggle('active', b.dataset.view === view));
 }
 
+// ---------- Breadcrumb ----------
+// The site is three levels deep - board, study, view - and until now only the
+// way in existed. Every page below the board states the whole path and makes
+// each step above it clickable, so leaving a study never means unloading it.
+
+/** `leaf` is the page you are on; the levels above it are worked out from
+ *  what is currently open. Pass nothing on the board itself, which is the
+ *  top and needs no trail. */
+function setCrumbs(leaf) {
+  const bar = el('#crumbs');
+  if (!bar) return;
+  if (!leaf) {
+    bar.classList.add('hidden');
+    bar.innerHTML = '';
+    return;
+  }
+
+  const trail = [];
+  // The board this study came from, named after its folder - but only when it
+  // did come from there. Opening something from Recents while another folder
+  // is on the board would otherwise print a trail claiming it lives in a
+  // folder it has nothing to do with. The step still exists either way; going
+  // back is what it is for.
+  const fromThisBoard = currentBoard && currentProjectId
+    && currentBoard.modules.some(m => m.files.some(f => f.project_id === currentProjectId));
+  trail.push({
+    label: fromThisBoard ? currentBoard.name : 'All modules',
+    go: () => (currentBoard ? showBoard(currentBoard) : showEmptyBoard()),
+  });
+  if (currentManifest) {
+    trail.push({
+      label: currentManifest.display_name || currentManifest.db_name || 'Study',
+      go: () => showOverview(),
+    });
+  }
+
+  bar.innerHTML = trail.map((c, i) =>
+    `<button class="crumb" data-i="${i}">${esc(c.label)}</button>`
+    + '<span class="crumb-sep">/</span>').join('')
+    + `<span class="crumb crumb-here" aria-current="page">${esc(leaf)}</span>`;
+
+  bar.querySelectorAll('.crumb[data-i]').forEach(b => {
+    b.addEventListener('click', () => trail[Number(b.dataset.i)].go());
+  });
+  bar.classList.remove('hidden');
+}
+
 // ---------- Views ----------
 
 const CATEGORY_SET_LABELS = {
@@ -604,6 +653,7 @@ async function showOverview() {
     </div>
   `;
 
+  setCrumbs('Overview');
   const grid = el('#stat-grid');
   data.equipment_counts.forEach(c => {
     const card = document.createElement('div');
@@ -651,6 +701,7 @@ async function showCategory(key) {
     <div id="sub-content"></div>
   `;
 
+  setCrumbs(data.label);
   if (nonEmpty.length === 0) {
     // Under a lite cache these categories are empty by design, not because the
     // study had nothing in them - say which it is.
@@ -691,6 +742,7 @@ async function showAllTables() {
     <div class="table-toolbar"><input type="search" placeholder="Filter tables..." id="table-filter"></div>
     <div class="tables-list" id="tables-list"></div>
   `;
+  setCrumbs('All Tables');
   const list = el('#tables-list');
   function draw(filter) {
     const q = filter.toLowerCase();
@@ -715,6 +767,7 @@ async function showRawTable(tableName) {
     <div class="page-desc"><a href="#" id="back-to-tables">&larr; back to All Tables</a></div>
     <div id="raw-table-content"></div>
   `;
+  setCrumbs(tableName);
   el('#back-to-tables').addEventListener('click', (e) => { e.preventDefault(); showAllTables(); });
   if (data.truncated) {
     el('#raw-table-content').innerHTML = truncationNotice(data.row_count, data.rows.length);
@@ -724,6 +777,7 @@ async function showRawTable(tableName) {
 
 async function showSingleLine() {
   setActiveMenu('single-line');
+  setCrumbs('Single Line');
   content().innerHTML = '<div class="loading">Loading buses...</div>';
   const buses = await api(`/api/project/${currentProjectId}/buses`);
   content().innerHTML = `
@@ -899,6 +953,7 @@ function showBoard(board, hasFolder = null) {
   currentProjectId = null;
   el('#menu').classList.add('hidden');
   setActiveMenu(null);
+  setCrumbs(null);   // the board is the top of the trail
 
   const opened = hasFolder === null ? !!board.folder : hasFolder;
   const isEmpty = !opened && board.total_files === 0;
@@ -1544,6 +1599,14 @@ async function applyDeployMode() {
 }
 
 el('#open-folder-btn').addEventListener('click', openProjectFolder);
+
+// The way out of a study, in the sidebar as well as the breadcrumb. Leaving
+// one used to mean unloading it, which is a destructive answer to "show me
+// the other modules again".
+el('#back-to-board').addEventListener('click', () => {
+  if (currentBoard) showBoard(currentBoard);
+  else showEmptyBoard();
+});
 
 // Picking a directory does not upload it: the browser hands us the file list
 // locally and only the file behind an opened tile is ever sent.

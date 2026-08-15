@@ -43,6 +43,7 @@
       <button id="clear-all-btn" class="hidden">Unload all</button>
 
       <nav id="menu" class="hidden">
+        <button id="back-to-board" class="menu-item back-item">&#8592; All modules</button>
         <div class="menu-section-title">Project</div>
         <button class="menu-item" data-view="overview">Overview</button>
         <button class="menu-item" data-view="single-line">Single Line (Bus Explorer)</button>
@@ -56,6 +57,10 @@
     </aside>
 
     <main id="content">
+      <!-- Views replace #view wholesale, so anything that has to survive a
+           navigation - the breadcrumb - sits outside it. -->
+      <nav id="crumbs" class="hidden" aria-label="Breadcrumb"></nav>
+      <div id="view">
       <div id="welcome">
         <h1>ETAP Lens</h1>
         <p>Point this at an ETAP <code>.oti</code>, <code>.mdf</code>, or <code>.bak</code> file on the left to
@@ -70,6 +75,7 @@
         <p class="hint">Paste a <strong>folder</strong> path instead of a file to scan the whole project
            directory - you'll get a list of everything loadable in it, and pick just the one you want. Or use
            <strong>Browse Folders</strong> on the left to navigate there visually.</p>
+      </div>
       </div>
     </main>
   </div>
