@@ -101,14 +101,38 @@ MAX_UPLOADS_PER_SESSION = _env_int("ETAP_LENS_MAX_UPLOADS_PER_SESSION", 25)
 CACHE_TTL_HOURS = _env_int("ETAP_LENS_CACHE_TTL_HOURS", 24 * 7)
 
 
+# SQL Server for reading project models (.MDF/.BAK).
+#
+# Locally that is the LocalDB instance ETAP itself installs, and it is simply
+# assumed present - it is what the desktop app has always used. A container has
+# no LocalDB, so it runs the Linux build of SQL Server alongside the app and
+# points these at it; unset, the hosted app serves study results only, exactly
+# as it did before.
+MSSQL_HOST = _env("ETAP_LENS_MSSQL_HOST")
+MSSQL_SA_PASSWORD = _env("ETAP_LENS_MSSQL_SA_PASSWORD")
+MSSQL_ODBC_DRIVER = _env("ETAP_LENS_MSSQL_DRIVER", "ODBC Driver 18 for SQL Server")
+
+# True when this deployment can read a project model at all.
+CAN_READ_MODELS = IS_LOCAL or bool(MSSQL_HOST and MSSQL_SA_PASSWORD)
+
+
 def _accepted_extensions():
-    """What the file picker should offer. Hosted instances cannot read project
-    models at all - no SQL Server - so offering them would only set up a
-    failure three steps later."""
+    """What the file picker should offer.
+
+    Offering a type this deployment cannot read only sets up a failure three
+    steps later, so the list follows what is actually available.
+    """
     from . import study_result  # noqa: PLC0415  (circular at module scope)
 
     study = set(study_result.STUDY_EXTENSIONS)
-    return study if IS_HOSTED else study | {".oti", ".mdf", ".bak"}
+    if IS_LOCAL:
+        return study | {".oti", ".mdf", ".bak"}
+    if CAN_READ_MODELS:
+        # No .oti: it holds a connection pointer, not data, and resolving it
+        # means reading the .MDF sitting next to it - which an upload of the
+        # .oti alone cannot bring with it.
+        return study | {".mdf", ".bak"}
+    return study
 
 
 class _LazyExtensions:
@@ -136,4 +160,5 @@ def public_config():
         "require_session": REQUIRE_SESSION,
         "turnstile_site_key": TURNSTILE_SITE_KEY,  # public by design
         "accepted_extensions": sorted(ACCEPTED_EXTENSIONS),
+        "can_read_models": CAN_READ_MODELS,
     }

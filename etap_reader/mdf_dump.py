@@ -2,9 +2,18 @@
 Dump an ETAP SQL Server database (.MDF live file or .BAK backup) into a
 portable SQLite file: one table per SQL Server table, schema + data.
 
-Never touches the source file - always works off a throwaway copy attached
-to a local SQL Server LocalDB instance, which is detached and deleted when
-done.
+Never touches the source file - always works off a throwaway copy, attached
+to SQL Server and detached and deleted when done.
+
+Two SQL Servers can be on the other end and the SQL is identical for both:
+
+- **LocalDB**, the instance ETAP installs on Windows. Named-pipe address,
+  Windows authentication, started on demand. What the desktop app uses.
+- **A server**, addressed by host with SA credentials. What a Linux container
+  uses, running the SQL Server engine next to the app.
+
+Which one is decided by whether a host is configured, not by guessing from the
+platform - so the container path can be exercised anywhere.
 """
 import os
 import shutil
@@ -13,9 +22,11 @@ import sqlite3
 import tempfile
 import uuid
 
-# Imported lazily: this path needs SQL Server LocalDB, which is Windows-only,
-# so a Linux container serving study result files should not have to carry
-# pyodbc (and the unixODBC headers it builds against) just to start up.
+from . import appconfig
+
+# Imported lazily so a deployment that only serves study result files - which
+# are plain SQLite and need none of this - does not have to carry pyodbc and
+# the unixODBC headers it builds against just to start up.
 pyodbc = None
 
 
@@ -26,10 +37,10 @@ def _require_pyodbc():
             import pyodbc as _pyodbc
         except ImportError as e:
             raise RuntimeError(
-                "Reading .MDF/.BAK project databases needs pyodbc and a local "
-                "SQL Server instance, which this deployment does not have. "
-                "Study result files (.SA1S/.SA2S/.LF1S/.UL1S/.TU1S) are read "
-                "directly and need neither."
+                "Reading .MDF/.BAK project databases needs pyodbc and a SQL "
+                "Server to attach them to, which this deployment does not "
+                "have. Study result files (.SA1S/.SA2S/.LF1S/.UL1S/.TU1S) are "
+                "read directly and need neither."
             ) from e
         pyodbc = _pyodbc
     return pyodbc
@@ -38,18 +49,47 @@ def _require_pyodbc():
 DEFAULT_INSTANCE = "ETAPLocalDB19"
 
 
+def _server_mode() -> bool:
+    return bool(appconfig.MSSQL_HOST and appconfig.MSSQL_SA_PASSWORD)
+
+
 def _run_sqlcmd(instance: str, query: str, database: str = "master"):
-    server = f"(localdb)\\{instance}"
-    result = subprocess.run(
-        ["sqlcmd", "-S", server, "-d", database, "-Q", query, "-b"],
-        capture_output=True, text=True,
-    )
+    if _server_mode():
+        # -C trusts the engine's self-signed certificate. It is the same
+        # container over loopback, so there is no third party to be trusted by
+        # a certificate chain here.
+        cmd = ["sqlcmd", "-S", appconfig.MSSQL_HOST, "-U", "sa",
+               "-P", appconfig.MSSQL_SA_PASSWORD, "-C", "-N",
+               "-d", database, "-Q", query, "-b"]
+    else:
+        cmd = ["sqlcmd", "-S", f"(localdb)\\{instance}", "-d", database, "-Q", query, "-b"]
+
+    result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
+        # The SA password is in cmd; report the query and output, never the
+        # command line.
         raise RuntimeError(f"sqlcmd failed:\n{result.stdout}\n{result.stderr}")
     return result.stdout
 
 
+def _connection_string(instance: str, db_name: str) -> str:
+    if _server_mode():
+        return (
+            f"DRIVER={{{appconfig.MSSQL_ODBC_DRIVER}}};"
+            f"SERVER={appconfig.MSSQL_HOST};DATABASE={db_name};"
+            f"UID=sa;PWD={appconfig.MSSQL_SA_PASSWORD};"
+            "Encrypt=yes;TrustServerCertificate=yes;"
+        )
+    return (
+        f"DRIVER={{ODBC Driver 17 for SQL Server}};"
+        f"SERVER=(localdb)\\{instance};DATABASE={db_name};Trusted_Connection=yes;"
+    )
+
+
 def _ensure_instance_running(instance: str):
+    """LocalDB instances start on demand; a server is already up."""
+    if _server_mode():
+        return
     subprocess.run(["sqllocaldb", "start", instance], capture_output=True, text=True)
 
 
@@ -140,11 +180,7 @@ def dump_to_sqlite(kind: str, source_path: str, out_sqlite_path: str,
         else:
             _restore_bak(instance, work_file, db_name, workdir)
 
-        conn_str = (
-            f"DRIVER={{ODBC Driver 17 for SQL Server}};"
-            f"SERVER=(localdb)\\{instance};DATABASE={db_name};Trusted_Connection=yes;"
-        )
-        cnxn = _require_pyodbc().connect(conn_str)
+        cnxn = _require_pyodbc().connect(_connection_string(instance, db_name))
         cursor = cnxn.cursor()
 
         cursor.execute(

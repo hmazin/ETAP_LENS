@@ -19,15 +19,25 @@ import os
 import sqlite3
 import time
 
-# Every ETAP study result file is a SQLite database; this is SQLite's own
-# header string, and it is the actual test of "is this the kind of file we
-# think it is". An extension is a claim, not evidence.
+# An extension is a claim, not evidence. Each accepted file type has a header
+# that actually identifies it, and checking it costs a few bytes of read.
+#
+# Study results are SQLite. Project databases are SQL Server, and the two
+# shapes there were confirmed against real ETAP files rather than taken from
+# documentation:
+#   .MDF  01 0f 00 00   page 0 of a data file is its file-header page
+#   .BAK  "TAPE"        Microsoft Tape Format, which is what a backup is
 SQLITE_MAGIC = b"SQLite format 3\x00"
+MDF_MAGIC = b"\x01\x0f\x00\x00"
+BAK_MAGIC = b"TAPE"
 
-# Extensions a hosted instance will accept. Project models (.oti/.mdf/.bak)
-# are SQL Server and need Windows, so accepting them here would only produce
-# a confusing failure later.
-HOSTED_EXTENSIONS = {".sa1s", ".sa2s", ".lf1s", ".ul1s", ".tu1s"}
+STUDY_EXTENSIONS = {".sa1s", ".sa2s", ".lf1s", ".ul1s", ".tu1s"}
+MODEL_EXTENSIONS = {".mdf", ".bak"}
+
+_MAGIC_BY_EXT = {
+    ".mdf": (MDF_MAGIC, "a SQL Server project database (.MDF)"),
+    ".bak": (BAK_MAGIC, "a SQL Server backup (.BAK)"),
+}
 
 
 class RejectedUpload(Exception):
@@ -36,7 +46,7 @@ class RejectedUpload(Exception):
 
 def check_extension(filename: str, allowed=None):
     ext = os.path.splitext(filename)[1].lower()
-    allowed = HOSTED_EXTENSIONS if allowed is None else allowed
+    allowed = STUDY_EXTENSIONS if allowed is None else allowed
     if ext not in allowed:
         raise RejectedUpload(
             f"{ext or 'That file type'} is not supported here. Upload an ETAP study "
@@ -82,9 +92,33 @@ def check_opens(path: str, max_tables: int = 2000):
     return names
 
 
+def check_model_magic(path: str, ext: str):
+    """Header check for a SQL Server project database.
+
+    There is no cheap equivalent of check_opens() here - parsing an MDF means
+    attaching it to a running engine, which is the import itself. So this is
+    the last check before that, and it only has to catch the obvious: a file
+    that was never a project database at all.
+    """
+    magic, description = _MAGIC_BY_EXT[ext]
+    try:
+        with open(path, "rb") as f:
+            header = f.read(len(magic))
+    except OSError as e:
+        raise RejectedUpload(f"Could not read the uploaded file: {e}")
+    if header != magic:
+        raise RejectedUpload(
+            f"That does not look like {description}. Check you picked the "
+            "project database rather than a study result, a report, or the "
+            ".oti pointer beside it."
+        )
+
+
 def validate(path: str, filename: str, allowed_extensions=None):
     """Full pre-flight. Raises RejectedUpload with a message for the user."""
-    check_extension(filename, allowed_extensions)
+    ext = check_extension(filename, allowed_extensions)
+    if ext in MODEL_EXTENSIONS:
+        return check_model_magic(path, ext)
     check_is_sqlite(path)
     return check_opens(path)
 

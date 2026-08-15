@@ -191,7 +191,7 @@ def _state(module, files) -> str:
     """
     if not module["extensions"]:
         return "unsupported"
-    if module.get("needs_sql_server") and appconfig.IS_HOSTED:
+    if module.get("needs_sql_server") and not appconfig.CAN_READ_MODELS:
         return "unavailable"
     if not files:
         return "no_results"

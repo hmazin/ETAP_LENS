@@ -33,8 +33,9 @@ MODULES = [
         "key": "model",
         "label": "Model",
         "extensions": (".oti", ".mdf", ".bak"),
-        # The project database is SQL Server; a hosted instance has none, so
-        # this module can never be opened there however many files are found.
+        # The project database is SQL Server. A deployment without one cannot
+        # open this module however many files are found, so the tile says so
+        # rather than offering an upload that fails later.
         "needs_sql_server": True,
     },
     {

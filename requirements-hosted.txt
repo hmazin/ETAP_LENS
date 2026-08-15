@@ -1,12 +1,12 @@
 # Dependencies for the hosted (container) deployment.
 #
-# Deliberately a standalone list rather than "-r requirements.txt", because it
-# differs in two ways:
-#   - no pyodbc: the hosted app serves study result files, which are plain
-#     SQLite. Reading .MDF/.BAK needs SQL Server LocalDB, which is Windows-only,
-#     and pulling pyodbc in would mean carrying unixODBC build headers in the
-#     image for a code path that can never run there.
-#   - gunicorn: POSIX-only, and the desktop app uses Flask's own server.
+# Deliberately a standalone list rather than "-r requirements.txt": it adds
+# gunicorn (POSIX-only, and the desktop app uses Flask's own server) and the
+# object-storage client.
+#
+# pyodbc is not here on purpose. It needs unixODBC headers and a compiler to
+# build, so the Dockerfile installs it in a layer that discards those again -
+# listing it here would drag them into the final image.
 flask
 flask-cors
 olefile
