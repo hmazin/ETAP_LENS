@@ -7,6 +7,6 @@
   {
     "name": "delete-stale",
     "action": { "type": "Delete" },
-    "condition": { "olderThan": "30d" }
+    "condition": { "olderThan": "2d" }
   }
 ]
