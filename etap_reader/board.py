@@ -77,7 +77,9 @@ def _file(filename, size, mtime, path=None, project_id=None, error=None, rel=Non
         "module": modules.module_for(filename),
         "variant": modules.variant_label(filename),
         "size": size,
-        "mtime": mtime,
+        # Normalized here rather than at each call site, so every path out of
+        # this module emits one shape whatever it was handed.
+        "mtime": _iso(mtime),
         "analyzed": bool(project_id),
         "project_id": project_id,
         "too_large": _too_large(size),
