@@ -638,7 +638,8 @@ def api_overview(project_id):
         equipment_counts.append({"key": key, "label": cat["label"], "row_count": total})
 
     info_tables = [
-        {"table": table, "title": title, "rows": dump(table)}
+        {"table": table, "title": title, "rows": dump(table),
+         "reference": table in cat_defs.OVERVIEW_REFERENCE_TABLES}
         for table, title in cat_defs.OVERVIEW_INFO_TABLES.items()
         if _table_exists(conn, table)
     ]

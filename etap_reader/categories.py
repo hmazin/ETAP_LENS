@@ -302,6 +302,21 @@ OVERVIEW_INFO_TABLES = {
     "Headr": "Header",
 }
 
+# Of the overview tables, the ones holding how the study was *set up* rather
+# than what it found. They run to ~100 columns of solver settings and
+# thresholds - worth keeping, not worth reading first - so the overview opens
+# them collapsed.
+#
+# Width alone is the wrong test for this. LFSumTotal is 41 columns and is the
+# headline result of a load flow; collapsing it by size hides the answer and
+# leaves the settings on display.
+OVERVIEW_REFERENCE_TABLES = {
+    "ISCStudyCase",
+    "ILFStudyCase",
+    "ILFStudyCaseLF3PH",
+    "TDStudyCaseInfo",
+}
+
 # Tables that participate in bus connectivity, and which columns on them
 # name the bus(es)/element(s) they connect to. Used by the Single Line view.
 CONNECTIVITY_TABLES = {

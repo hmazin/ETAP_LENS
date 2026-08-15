@@ -450,11 +450,6 @@ function truncationNotice(rowCount, shown) {
 // time-domain study, while giving the whole page over to the one table that
 // really is a single record: ~100 raw study-case column names.
 
-/** A single-record table wider than this opens collapsed. Study-case records
- *  run to ~100 columns of solver settings: real reference data, but not what
- *  you opened the overview to read. */
-const WIDE_RECORD_FIELDS = 24;
-
 const INFO_NOISE_COLUMNS = ['IID', 'Revision', 'DataRevs', 'Issue'];
 
 function infoPairs(row) {
@@ -518,18 +513,24 @@ function infoCard(t) {
   const rows = t.rows || [];
   if (!rows.length) return null;
 
+  // Only how-the-study-was-configured tables collapse, and the server says
+  // which those are. Collapsing by width instead would fold away System
+  // Totals - 41 columns, and the headline result of a load flow.
+  if (t.reference) {
+    const pairs = infoPairs(rows[0] || {});
+    if (!pairs.length) return null;
+    return {
+      collapsed: true,
+      html: `<div class="card"><details class="info-details">
+               <summary><h3>${esc(t.title)}</h3>
+                 <span class="detail-count">${pairs.length} fields</span></summary>
+               ${kvGridHtml(pairs)}</details></div>`,
+    };
+  }
+
   if (rows.length === 1) {
     const pairs = infoPairs(rows[0]);
     if (!pairs.length) return null;
-    if (pairs.length > WIDE_RECORD_FIELDS) {
-      return {
-        collapsed: true,
-        html: `<div class="card"><details class="info-details">
-                 <summary><h3>${esc(t.title)}</h3>
-                   <span class="detail-count">${pairs.length} fields</span></summary>
-                 ${kvGridHtml(pairs)}</details></div>`,
-      };
-    }
     return { collapsed: false, html: `<div class="card"><h3>${esc(t.title)}</h3>${kvGridHtml(pairs)}</div>` };
   }
 
