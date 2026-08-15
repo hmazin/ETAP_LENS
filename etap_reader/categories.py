@@ -302,19 +302,25 @@ OVERVIEW_INFO_TABLES = {
     "Headr": "Header",
 }
 
-# Of the overview tables, the ones holding how the study was *set up* rather
-# than what it found. They run to ~100 columns of solver settings and
-# thresholds - worth keeping, not worth reading first - so the overview opens
-# them collapsed.
+# Of the overview tables, the ones holding configuration rather than findings:
+# how the study was set up, and how the project is drawn. They run to a
+# hundred-odd columns each - worth keeping, not worth reading first - so the
+# overview opens them collapsed.
 #
 # Width alone is the wrong test for this. LFSumTotal is 41 columns and is the
 # headline result of a load flow; collapsing it by size hides the answer and
 # leaves the settings on display.
+#
+# ProjectRec is here because despite the name it holds none of the project's
+# particulars - it is 149 columns of annotation fonts, tag-link symbol paths
+# and diagram colours. What an engineer means by project information (name,
+# location, engineer, date) is in Headr, which stays open.
 OVERVIEW_REFERENCE_TABLES = {
     "ISCStudyCase",
     "ILFStudyCase",
     "ILFStudyCaseLF3PH",
     "TDStudyCaseInfo",
+    "ProjectRec",
 }
 
 # Tables that participate in bus connectivity, and which columns on them

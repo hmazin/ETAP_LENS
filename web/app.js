@@ -584,32 +584,37 @@ function infoCard(t) {
   const rows = t.rows || [];
   if (!rows.length) return null;
 
-  // Only how-the-study-was-configured tables collapse, and the server says
-  // which those are. Collapsing by width instead would fold away System
-  // Totals - 41 columns, and the headline result of a load flow.
+  // A table whose every column is bookkeeping has nothing to show. ProjProps
+  // is one column wide and that column is IID, so filtering left it with no
+  // columns at all and it drew an empty card with a row count in the corner.
+  const pairs = infoPairs(rows[0]);
+  const columns = Object.keys(rows[0]).filter(c => !INFO_NOISE_COLUMNS.includes(c));
+  if (!pairs.length && !columns.length) return null;
+
+  // Shape follows the data, whether or not the card is collapsed - collapsing
+  // used to force the single-record rendering, which would have shown the
+  // first row of a multi-row table and silently dropped the rest.
+  const body = rows.length === 1 ? kvGridHtml(pairs)
+    : isMetricTable(rows) ? metricListHtml(rows)
+    : miniTableHtml(rows);
+  const count = rows.length === 1 ? `${pairs.length} fields` : `${rows.length} rows`;
+
+  // Only tables describing configuration collapse, and the server says which
+  // those are. Collapsing by width instead would fold away System Totals -
+  // 41 columns, and the headline result of a load flow.
   if (t.reference) {
-    const pairs = infoPairs(rows[0] || {});
-    if (!pairs.length) return null;
     return {
       collapsed: true,
       html: `<div class="card"><details class="info-details">
                <summary><h3>${esc(t.title)}</h3>
-                 <span class="detail-count">${pairs.length} fields</span></summary>
-               ${kvGridHtml(pairs)}</details></div>`,
+                 <span class="detail-count">${esc(count)}</span></summary>
+               ${body}</details></div>`,
     };
   }
-
-  if (rows.length === 1) {
-    const pairs = infoPairs(rows[0]);
-    if (!pairs.length) return null;
-    return { collapsed: false, html: `<div class="card"><h3>${esc(t.title)}</h3>${kvGridHtml(pairs)}</div>` };
-  }
-
-  const body = isMetricTable(rows) ? metricListHtml(rows) : miniTableHtml(rows);
   return {
     collapsed: false,
     html: `<div class="card"><h3>${esc(t.title)}
-             <span class="detail-count">${rows.length} rows</span></h3>${body}</div>`,
+             <span class="detail-count">${esc(count)}</span></h3>${body}</div>`,
   };
 }
 
