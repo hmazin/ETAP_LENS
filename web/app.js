@@ -748,14 +748,32 @@ async function showAllTables() {
   content().innerHTML = `
     <div class="page-title">All Tables (raw)</div>
     <div class="page-desc">Every table in the underlying ETAP database, including revision-history (H1-H8) and rating (_R) tables. ${tables.length} tables total.</div>
-    <div class="table-toolbar"><input type="search" placeholder="Filter tables..." id="table-filter"></div>
+    <div class="table-toolbar">
+      <input type="search" placeholder="Filter tables..." id="table-filter">
+      <span class="row-count" id="table-count"></span>
+      <button class="export-toggle-btn" id="index-export">&#11015; Export list to Excel / CSV &#9662;</button>
+    </div>
+    <div class="export-panel hidden" id="index-export-panel"></div>
     <div class="tables-list" id="tables-list"></div>
   `;
   setCrumbs('All Tables');
   const list = el('#tables-list');
+
+  // What is on this page is an index of the database - every table, its
+  // category and how many rows it holds. That is worth taking away on a
+  // model with 873 of them, and it is the one table view that had no export
+  // because it is not built on renderDataTable.
+  let shown = tables;
+  const INDEX_COLUMNS = ['Table', 'Category', 'Rows'];
+  const indexRows = () => shown.map(t => ({
+    Table: t.table, Category: t.category || '', Rows: t.rows,
+  }));
+
   function draw(filter) {
     const q = filter.toLowerCase();
-    list.innerHTML = tables.filter(t => !q || t.table.toLowerCase().includes(q)).map(t => `
+    shown = tables.filter(t => !q || t.table.toLowerCase().includes(q));
+    el('#table-count').textContent = `${shown.length} of ${tables.length}`;
+    list.innerHTML = shown.map(t => `
       <div class="t-row" data-table="${t.table}">
         <span>${t.table} ${t.category ? `<span class="cat-tag">${t.category}</span>` : ''}</span>
         <span>${t.rows}</span>
@@ -766,6 +784,38 @@ async function showAllTables() {
   }
   draw('');
   el('#table-filter').addEventListener('input', e => draw(e.target.value));
+
+  const panel = el('#index-export-panel');
+  const btn = el('#index-export');
+  const stem = `${currentManifest?.db_name || 'project'}_table_index`;
+  function renderPanel() {
+    panel.innerHTML = `
+      <div class="export-note">Exports the ${shown.length} table(s) currently listed - name, category and row count.</div>
+      <div class="export-panel-actions">
+        <button type="button" data-act="csv">Download CSV</button>
+        <button type="button" data-act="xlsx">Download Excel (.xlsx)</button>
+      </div>
+      <div class="export-status" id="index-export-status"></div>`;
+    panel.querySelector('[data-act="csv"]').addEventListener('click',
+      () => downloadCsv(INDEX_COLUMNS, indexRows(), `${stem}.csv`));
+    panel.querySelector('[data-act="xlsx"]').addEventListener('click', async () => {
+      const status = el('#index-export-status');
+      status.textContent = 'Building workbook...';
+      try {
+        await downloadXlsx(INDEX_COLUMNS, indexRows(), `${stem}.xlsx`, 'Table Index');
+        status.textContent = '';
+      } catch (e) {
+        status.textContent = e.message;
+      }
+    });
+  }
+  renderPanel();
+  btn.addEventListener('click', () => {
+    renderPanel();  // the filter may have moved since it was last opened
+    panel.classList.toggle('hidden');
+    const open = !panel.classList.contains('hidden');
+    btn.innerHTML = `&#11015; Export list to Excel / CSV ${open ? '&#9652;' : '&#9662;'}`;
+  });
 }
 
 async function showRawTable(tableName) {
