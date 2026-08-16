@@ -19,11 +19,12 @@ An ETAP `.oti` file is **not** the project database — it's a small container h
 
 ETAP Lens figures out which file actually has the data, reads it (via a local, throwaway copy — your original files are never modified), and shows everything in a browsable web UI.
 
-Study result files (`.SA1S`, `.SA2S`, `.LF1S`, `.UL1S`, `.TU1S`) are a separate case: they're already plain SQLite files (ETAP writes them that way), so they're read directly — no SQL Server involved, and loading is near-instant.
+Study result files (`.SA1S`, `.SA2S`, `.LF1S`, `.UL1S`, `.TU1S`, `.HA1S`, `.GRDS`) are a separate case: they're already plain SQLite files (ETAP writes them that way), so they're read directly — no SQL Server involved, and loading is near-instant.
 
 ## Features
 
-- **Load a project model** (`.oti`/`.mdf`/`.bak`) or **study results** — short circuit (`.SA1S` ANSI duty, `.SA2S` fault currents by type), load flow (`.LF1S` balanced, `.UL1S` unbalanced/3-phase), and time-domain load flow (`.TU1S` TDLF — typically a full 8760-hour year)
+- **Load a project model** (`.oti`/`.mdf`/`.bak`) or **study results** — short circuit (`.SA1S` ANSI duty, `.SA2S` fault currents by type), load flow (`.LF1S` balanced, `.UL1S` unbalanced/3-phase), time-domain load flow (`.TU1S` TDLF — typically a full 8760-hour year), harmonics (`.HA1S` — both frequency scan and harmonic load flow), and ground grid (`.GRDS`)
+- **Harmonic plot curves folded in** — a harmonic run keeps its curves in `.fspdb`/`.hfpdb` files beside the `.HA1S`; open the `.HA1S` from a project folder and the impedance-vs-frequency sweeps, spectra and waveforms come with it, each point tagged with the device it belongs to
 - **Annual AC loss report** for TDLF results — energy losses split across transmission lines, cables, unit transformers and main power transformers; generation at the units; and net output at the point of interconnection, all derived on import and reconciled against ETAP's own system totals
 - **In-app folder browser** — navigate real folders and drives from inside the page (no native OS dialog limitations), with quick-access shortcuts to Desktop/Documents/Downloads/Home, and a "Select This Folder" action to scan and pick from everything loadable in it
 - **Load an entire folder at once** — paste or browse to a folder and get a pick-list of every `.oti`/`.mdf`/`.bak`/study-result file in it
@@ -31,6 +32,8 @@ Study result files (`.SA1S`, `.SA2S`, `.LF1S`, `.UL1S`, `.TU1S`) are a separate 
   - Project model: Buses, Cables & Lines, Transformers, Generators & Sources, Loads & Motors, Protective Devices, Capacitors & Reactors, Meters
   - Short-circuit study: Device Duty, Bus Duty (Interrupting/Momentary), Fault Currents by type, Clipping Current, Alerts
   - Load flow study: Bus Voltage & Loading, Branch Loading/Losses, System Totals, Voltage Violations, Alerts
+  - Harmonic study: Frequency Scan, Plot Curves, Voltage Distortion, Bus/Branch Harmonic Spectrum, IEEE 519 Limits, Harmonic Sources & Filters, Alerts
+  - Ground grid study: resistance to remote earth, ground potential rise, mesh and step voltages calculated vs. tolerable
 - **Single Line (Bus Explorer)** — pick a bus, see every cable, transformer, breaker/switch, load, and source connected to it (a tabular topology view)
 - **Every table view has**: search (scoped to one column or all), sortable columns, pagination, a column-visibility panel (wide tables auto-hide audit-trail noise columns like `IID`/`Revision`/`Checker*`), and a Sum/Average/Min/Max/Count summary row
 - **Export** any view to CSV or Excel (`.xlsx`), respecting your current filter/search/column-visibility state
@@ -46,7 +49,7 @@ Study result files (`.SA1S`, `.SA2S`, `.LF1S`, `.UL1S`, `.TU1S`) are a separate 
 
 - Windows (this project relies on SQL Server LocalDB and the Windows registry for a couple of features — see [Platform notes](#platform-notes))
 - Python 3.10+
-- A local SQL Server / SQL Server LocalDB instance. ETAP itself normally installs one named `ETAPLocalDB19` (matches the `DSN=otilocaldb19` seen in `.oti` connection strings) — if that's present, no extra setup is needed. Study result files (`.SA1S`/`.SA2S`/`.LF1S`/`.UL1S`/`.TU1S`) don't need this at all, since they're already SQLite.
+- A local SQL Server / SQL Server LocalDB instance. ETAP itself normally installs one named `ETAPLocalDB19` (matches the `DSN=otilocaldb19` seen in `.oti` connection strings) — if that's present, no extra setup is needed. Study result files (`.SA1S`/`.SA2S`/`.LF1S`/`.UL1S`/`.TU1S`/`.HA1S`/`.GRDS`) don't need this at all, since they're already SQLite.
 - `sqlcmd` and the "ODBC Driver 17 for SQL Server" (both ship with SQL Server / SSMS tooling)
 
 ## Quick start
@@ -140,6 +143,8 @@ etap_reader/
   mdf_dump.py                SQL Server LocalDB attach + dump to SQLite
   study_result.py            direct SQLite copy + cleanup for study result files
   time_domain.py             TDLF (.TU1S) derived summaries + annual AC loss report
+  ha_plots.py                harmonic plot curves (.fspdb/.hfpdb) folded into their .HA1S
+  ground_grid.py             .GRDS cleanup (binary geometry column, epoch RunDate)
   categories.py               curated table groupings per project/study type
   project_cache.py            caching, loading, unloading
   folder_scan.py               flat "what's loadable in this folder" scan
@@ -161,7 +166,7 @@ This was built and tested on Windows against ETAP 24. A few pieces are Windows-s
 - The Windows registry lookup for Desktop/Documents/Downloads quick-access folders (handles OneDrive Known Folder Move redirection)
 - Drive-letter enumeration (`C:\`, `D:\`, ...) in the folder browser
 
-Study result file support (`.SA1S`/`.SA2S`/`.LF1S`/`.UL1S`/`.TU1S`) has no Windows-specific dependencies and should work anywhere Python + Flask run. Cross-platform support for the rest is a good first contribution — see below.
+Study result file support (`.SA1S`/`.SA2S`/`.LF1S`/`.UL1S`/`.TU1S`/`.HA1S`/`.GRDS`) has no Windows-specific dependencies and should work anywhere Python + Flask run. Cross-platform support for the rest is a good first contribution — see below.
 
 ## How ETAP's file formats actually work
 

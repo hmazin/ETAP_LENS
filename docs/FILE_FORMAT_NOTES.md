@@ -20,8 +20,14 @@ A project folder typically contains:
 | `<name>.MDF` | The live SQL Server database file - this is where the actual project data lives. |
 | `<name>.BAK` | A SQL Server backup of the same database. Used as a fallback if no `.MDF` is present. |
 | `<name>_log.LDF` | SQL Server's transaction log (write-ahead log for crash recovery). **Not a second copy of the data** - nothing useful to extract from it directly. Not needed to read the `.MDF`; we attach with `FOR ATTACH_REBUILD_LOG` rather than using the original log. |
-| `<name>.SA1S` / `.SA2S` / `.LF1S` / `.UL1S` / etc. | Study result files. Unlike the project database, **these are already plain SQLite** (ETAP's `Etaps.ini` has `OutputToSQLite=1`) - no SQL Server involved, read directly. |
+| `<name>.SA1S` / `.SA2S` / `.LF1S` / `.UL1S` / `.HA1S` / `.GRDS` / etc. | Study result files. Unlike the project database, **these are already plain SQLite** (ETAP's `Etaps.ini` has `OutputToSQLite=1`) - no SQL Server involved, read directly. |
+| `<case>.fspdb` / `<case>.hfpdb` | Plot curve data for a harmonic run, also plain SQLite. See [`.HA1S` and its plot companions](#ha1s---harmonic-analysis-and-its-plot-companions). |
+| `<case>.fsp` / `<case>.hfp` | The binary plot *settings* beside each of the above - axis ranges, which curves are ticked. Undocumented, and not worth decoding: the curve data itself is in the `db` files. Header is `62 C5 00 00` (`0x0000C562`) then `30 1D 00 00`, then a plot-type word - 7 for `.fsp`, 6 for `.hfp`. No strings anywhere in the file. |
+| `<case>.XL1S` | Seen once, named `AmpacityReport.XL1S`, 55 tables whose schema is the arc-flash / short-circuit family (`BusArcFlash`, `PDArcFlash`, `SCIEC*`, `SeqOfOper`) - **every table empty except `DBVersion`**, and dated a year before the rest of the project. Not enough to say what it is for, so not wired up. |
 | `classification.xml` | Small, mostly empty in projects we've seen (`<root schema="2"><Item Name="Classifications" .../></root>`) - equipment classification tree metadata, not yet found to be load-bearing for anything this tool does. |
+| `Plots/<module>/~OTI_ETAP#temp.plotDeviceIDList_*.json` | Which devices are ticked in a plot dialog (`{"schema": 1, "listDeviceTypeDeviceIDData": [...]}`). UI state, not results. |
+| `Area Reports.txt`, `CableVd.txt` | ETAP's printed text reports. A text rendering of data already in the corresponding `.LF1S`, so nothing to gain by parsing them. `CableVd.txt` was zero bytes in the project we have. |
+| `ETAPDumpInfo.txt` | UTF-16 host/environment dump ETAP writes on start - OS, CPU, disks, and the ETAP install directory. Useful for one thing: it names the ETAP build a project was last touched by. |
 
 ## `.OTI` structure
 
@@ -113,6 +119,94 @@ Two more traps in that report:
 `-999` into `TD2TWorstOverLoadCases` and leaves `LoadingPercent*` at zero.
 That is "not evaluated", not "0% loaded", and reporting it as the latter is
 misleading - cables in particular often have no ampacity in the model.
+
+## `.HA1S` - Harmonic Analysis, and its plot companions
+
+Plain SQLite, 52 tables. The thing to know about `.HA1S` before anything else:
+
+**One extension, two studies.** ETAP writes a *frequency scan* and a
+*harmonic load flow* into the same `.HA1S` schema and simply leaves the other
+one's tables empty. From a real project (case names are ETAP's, and the
+`FS_`/`HLF_` prefixes are the engineer's convention, not something ETAP
+enforces):
+
+| | `FS_H01.HA1S` (frequency scan) | `HLF_H01.HA1S` (harmonic load flow) |
+|---|---|---|
+| `HAFreqScan` | 2378 rows | 0 |
+| `HAFSAlert` | 2 rows | 0 |
+| `HASystemInfo` | 0 | 74 rows |
+| `LFR` | 0 | 74 rows |
+| `HABusTabulationNom` / `Fund` | 0 | 30 rows each |
+| `HASourceTabulationFund` | 0 | 31 rows |
+
+So the `harmonics` category set in `categories.py` lists both halves and each
+file populates the one it ran. Deciding by extension is impossible, and
+deciding by content would mean opening the file to work out how to open it -
+which is exactly what the board is built not to do.
+
+The tables worth knowing:
+
+- `HAFreqScan` - the scan itself: `BusID`, `Freq`, `Mag`, `Angle`. One row per
+  bus per frequency step. This is where resonance shows up.
+- `HASystemInfo` - per-bus harmonic load flow result: fundamental and RMS
+  voltage, `VTHD`, `VTIF`, `VTIHD`/`VTSHD` telephone-influence indices.
+- `HABusTabulation*` / `HABranchTabulation*` / `HASourceTabulationFund` -
+  magnitude per harmonic order. The `Fund` and `Nom`/`1MVA` variants are the
+  same numbers against different bases.
+- `IHAStudyCase` - `FromHz`/`ToHz`/`StepHz` and method. Worth reading first:
+  it tells you what the scan actually swept.
+- `IHASource` / `IHASourceData` - the injecting devices and their spectra.
+
+### Plot companions (`.fspdb` / `.hfpdb`)
+
+A harmonic run writes up to four files sharing a stem: `<case>.HA1S` (results),
+`<case>.fspdb` (frequency-scan curves), `<case>.hfpdb` (waveform and spectrum
+curves), and a `.fsp`/`.hfp` binary of plot settings for each.
+
+The two `db` files are plain SQLite holding one table per curve, plus
+`DeviceID_IID` and `SystemFrequency`:
+
+```
+Buses_PCC1_Z Magnitude_Hz_4116      ValueX, ValueY          1189 rows
+Buses_PCC1_Z Angle_Order_4116       ValueX, ValueY          1189 rows
+Buses_PCC1_Spectrum_Hz_4116         ValueX, ValueY            16 rows
+Cables_Cable25_Waveform_4705        ValueX, ValueY, Angle   2501 rows
+```
+
+The name is `<DeviceType>_<DeviceID>_<Curve>[_<XAxis>]_<IID>`, where `IID` is
+the device's internal id and `XAxis` is `Hz` or `Order` (absent on `Waveform`,
+which is against time). **Do not parse this by splitting on underscores** - a
+bus named `PCC_1` breaks it. `etap_reader/ha_plots.py` resolves the device
+from the file's own `DeviceID_IID` table instead, then locates that name in
+the string.
+
+These are attached to the `.HA1S` at import rather than opened on their own,
+because alone they are anonymous: two unlabelled columns with no project, no
+study case, and no indication of which run produced them. Attached, they gain
+`HAPlotIndex` (one row per curve) and `HAPlotCurves` (long format, one row per
+point with the device named).
+
+An **empty companion is normal** - `FS_H01.hfpdb` in our sample project holds
+only `DeviceID_IID` and `SystemFrequency` with no curve tables at all, left
+over from an earlier run. Zero curves is not an error.
+
+## `.GRDS` - Ground Grid
+
+Plain SQLite, one table (`GroundGrid`), one row per grid. Holds what an
+IEEE 80 study is for: `RG` (resistance to remote earth), `GPR` (ground
+potential rise), and calculated vs. tolerable mesh and step voltages
+(`EMeshC`/`EMeshT`, `EStepC`/`EStepT`) with the coordinates of each worst
+point. Two columns need handling before display, both done in
+`etap_reader/ground_grid.py`:
+
+- `data` - ETAP's serialized conductor and rod geometry, 13-25 KB of hex per
+  row, layout not decoded. Replaced with `GeometryBytes` (its length) so its
+  presence is visible without filling the table view with one unreadable cell.
+- `RunDate` - seconds since the epoch stored as a REAL, which renders as
+  `1,778,879,078`. Converted to ISO; `0` means the grid was never run.
+
+Rows for grids that were never run are all zeros with a null `data` - present
+in the file but carrying no result.
 
 ## `.MDF` table conventions
 

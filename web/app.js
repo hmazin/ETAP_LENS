@@ -477,6 +477,8 @@ const CATEGORY_SET_LABELS = {
   load_flow: 'Load Flow Study - Balanced',
   load_flow_unbalanced: 'Load Flow Study - Unbalanced (3-Phase)',
   time_domain: 'Time-Domain Load Flow Study (TDLF)',
+  harmonics: 'Harmonic Analysis Study',
+  ground_grid: 'Ground Grid Study',
 };
 
 // Shown above a table whose payload the server capped. Filtering and sorting
@@ -488,6 +490,18 @@ function truncationNotice_lite() {
     detail behind them - one row per branch per time step - was discarded after the summaries
     were built, which is why there is nothing here. Load the file in the desktop app to page
     through the raw series.</div>`;
+}
+
+/** A harmonic run's curves are in .fspdb/.hfpdb files beside the .HA1S, not
+ *  inside it. Uploading the .HA1S on its own leaves them behind, which is a
+ *  different thing from ETAP having saved no plots - and an engineer who is
+ *  looking for a frequency-scan curve needs to know which. */
+function noPlotsNotice() {
+  return `<div class="truncation-note">No plot curves came with this study. ETAP keeps them in
+    <code>.fspdb</code> (frequency scan) and <code>.hfpdb</code> (waveform and spectrum) files
+    named after the study case, alongside the <code>.HA1S</code> - so either the run was saved
+    without plots, or only the <code>.HA1S</code> was uploaded. Opening the project folder in the
+    desktop app picks up the companions automatically.</div>`;
 }
 
 function truncationNotice(rowCount, shown) {
@@ -716,6 +730,7 @@ async function showCategory(key) {
     // study had nothing in them - say which it is.
     el('#sub-content').innerHTML = currentManifest?.stats?.lite_cache
       ? truncationNotice_lite()
+      : key === 'plot_curves' ? noPlotsNotice()
       : `<div class="loading">No data found for this category in this project.</div>`;
     return;
   }

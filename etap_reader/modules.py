@@ -57,9 +57,20 @@ MODULES = [
         "etap_tag": "TDLF",
     },
     {"key": "motor_starting", "label": "Motor Starting", "extensions": (), "etap_tag": "MS"},
-    {"key": "harmonics", "label": "Harmonics", "extensions": (), "etap_tag": "HA"},
+    {
+        "key": "harmonics",
+        "label": "Harmonics",
+        "extensions": (".ha1s",),
+        "etap_tag": "HA",
+    },
     {"key": "transient_stability", "label": "Transient Stability", "extensions": (), "etap_tag": "TS"},
     {"key": "opf", "label": "Optimal Power Flow", "extensions": (), "etap_tag": "OPF"},
+    {
+        "key": "ground_grid",
+        "label": "Ground Grid",
+        "extensions": (".grds",),
+        "etap_tag": "GRD",
+    },
 ]
 
 # ext -> module key, built from the table above so the two cannot drift.

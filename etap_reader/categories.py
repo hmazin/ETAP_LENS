@@ -202,6 +202,96 @@ STUDY_CATEGORIES = {
             "tables": ["Alert", "Messages"],
         },
     },
+    "harmonics": {  # .HA1S - harmonic analysis
+        # One extension, two studies. ETAP writes a frequency scan and a
+        # harmonic load flow to the same .HA1S schema and simply leaves the
+        # other one's tables empty, so both sets of categories are listed here
+        # and a given file populates whichever half it ran. Splitting them by
+        # extension is not possible; splitting them by peeking inside would
+        # mean opening the file to decide how to open it.
+        "frequency_scan": {
+            "label": "Frequency Scan",
+            "description": "Driving-point impedance magnitude and angle swept across "
+                           "frequency at each scanned bus - where the system resonates.",
+            "tables": ["HAFreqScan"],
+        },
+        "plot_curves": {
+            "label": "Plot Curves",
+            "description": "The curves ETAP saved with the run (.fspdb/.hfpdb): impedance "
+                           "vs. frequency, harmonic spectra, and voltage/current waveforms, "
+                           "one row per point with its device named.",
+            "tables": ["HAPlotIndex", "HAPlotCurves"],
+        },
+        "distortion": {
+            "label": "Voltage Distortion",
+            "description": "Total and individual harmonic voltage distortion per bus "
+                           "(VTHD/VIHD), against the limits set in the study case.",
+            "tables": ["VTHDReport", "VHDReport"],
+        },
+        "system_results": {
+            "label": "Bus Harmonic Results",
+            "description": "Per-bus fundamental and RMS voltage with THD, TIF, IT, and "
+                           "telephone-influence indices for the harmonic load flow.",
+            "tables": ["HASystemInfo"],
+        },
+        "tabulation_bus": {
+            "label": "Bus Harmonic Spectrum",
+            "description": "Harmonic voltage magnitude per bus per order, expressed against "
+                           "nominal kV and against the fundamental.",
+            "tables": ["HABusTabulationNom", "HABusTabulationFund"],
+        },
+        "tabulation_branch": {
+            "label": "Branch & Source Spectrum",
+            "description": "Harmonic current magnitude per order through branches, capacitors, "
+                           "and filters, and what each harmonic source injects.",
+            "tables": ["HABranchTabulationFund", "HABranchTabulation1MVA",
+                       "HACapTabulationFund", "HACapTabulation1MVA",
+                       "HAFilterTabulationFund", "HAFilterTabulation1MVA",
+                       "HASourceTabulationFund"],
+        },
+        "limits": {
+            "label": "IEEE 519 Limits",
+            "description": "Current distortion limits by Isc/IL ratio and the per-order "
+                           "limits each point of common coupling is measured against.",
+            "tables": ["HALimits", "HAIDistortionLimits"],
+        },
+        "element_results": {
+            "label": "Load Flow Results",
+            "description": "The fundamental-frequency load flow the harmonic study was "
+                           "solved on top of.",
+            "tables": ["LFR"],
+        },
+        "harmonic_sources": {
+            "label": "Harmonic Sources & Filters",
+            "description": "The injecting devices (drives, converters, machines) with their "
+                           "spectra, and the filters installed to absorb them.",
+            "tables": ["IHASource", "IHASourceData", "IHAMachine", "IHAFilter", "ISVC",
+                       "ISVCModel", "IHVDCLink1", "IVFD", "IUPS"],
+        },
+        "study_setup": {
+            "label": "Study Setup",
+            "description": "Method, frequency range and step, and the alert thresholds the "
+                           "run was judged against.",
+            "tables": ["IHAStudyCase", "IHAStudyCaseAlert", "IAdjustments", "IHAsummary"],
+        },
+        "alerts": {
+            "label": "Alerts / Violations",
+            "description": "Resonance points flagged by the frequency scan, distortion and "
+                           "loading violations from the harmonic load flow, and filter overloads.",
+            "tables": ["HAFSAlert", "HALFAlert", "FilterOverloading"],
+        },
+    },
+    "ground_grid": {  # .GRDS - ground grid (IEEE 80 / finite-element) studies
+        "grid_results": {
+            "label": "Grid Results",
+            "description": "One row per ground grid: resistance to remote earth (RG), ground "
+                           "potential rise (GPR), and the calculated vs. tolerable mesh and "
+                           "step voltages with the location of each worst point. GeometryBytes "
+                           "is the size of ETAP's binary conductor/rod layout, which is stored "
+                           "in the file but not in a form this tool can read.",
+            "tables": ["GroundGrid"],
+        },
+    },
     "time_domain": {  # .TU1S - time-domain load flow (a load flow per time step)
         "summary": {
             "label": "Study Summary",
@@ -292,6 +382,10 @@ OVERVIEW_INFO_TABLES = {
     "ILFStudyCaseLF3PH": "Study Case Parameters",
     "Isummary": "Equipment Summary (as of this study)",
     "IsummaryLF3PH": "Equipment Summary (as of this study)",
+    "IHAsummary": "Equipment Summary (as of this study)",
+    "IHAStudyCase": "Study Case Parameters",
+    "HAPlotIndex": "Saved Plot Curves",
+    "GroundGrid": "Ground Grid Results",
     "LFSumTotal": "System Totals",
     "LFSumTotalLF3PH": "System Totals",
     "TDStudySummary": "Time-Domain Study Summary",
@@ -320,6 +414,7 @@ OVERVIEW_REFERENCE_TABLES = {
     "ILFStudyCase",
     "ILFStudyCaseLF3PH",
     "TDStudyCaseInfo",
+    "IHAStudyCase",
     "ProjectRec",
 }
 

@@ -31,7 +31,10 @@ SQLITE_MAGIC = b"SQLite format 3\x00"
 MDF_MAGIC = b"\x01\x0f\x00\x00"
 BAK_MAGIC = b"TAPE"
 
-STUDY_EXTENSIONS = {".sa1s", ".sa2s", ".lf1s", ".ul1s", ".tu1s"}
+# Duplicated from study_result.STUDY_EXTENSIONS rather than imported: that
+# module imports this one, and a guard that cannot run until the thing it
+# guards has loaded is the wrong way round. Keep the two in step.
+STUDY_EXTENSIONS = {".sa1s", ".sa2s", ".lf1s", ".ul1s", ".tu1s", ".ha1s", ".grds"}
 MODEL_EXTENSIONS = {".mdf", ".bak"}
 
 _MAGIC_BY_EXT = {

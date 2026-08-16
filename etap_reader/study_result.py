@@ -8,7 +8,7 @@ browser, etc.) treats it identically.
 import os
 import sqlite3
 
-from . import appconfig, time_domain, upload_guard
+from . import appconfig, ground_grid, ha_plots, time_domain, upload_guard
 
 # extension -> (friendly label, which curated category set in categories.py applies)
 STUDY_EXTENSIONS = {
@@ -17,6 +17,8 @@ STUDY_EXTENSIONS = {
     ".lf1s": ("Load Flow - Balanced", "load_flow"),
     ".ul1s": ("Load Flow - Unbalanced (3-Phase)", "load_flow_unbalanced"),
     ".tu1s": ("Load Flow - Time Domain (TDLF)", "time_domain"),
+    ".ha1s": ("Harmonic Analysis", "harmonics"),
+    ".grds": ("Ground Grid", "ground_grid"),
 }
 
 # ETAP's own report generator writes literal spacer rows into these result
@@ -96,6 +98,26 @@ def import_study_to_sqlite(source_path: str, out_sqlite_path: str, progress_cb=N
 
     _strip_blank_line_rows(dst, tables)
 
+    source_ext = os.path.splitext(source_path)[1].lower()
+
+    # The one table a .GRDS holds needs its binary geometry column and its
+    # epoch timestamp made presentable before anything tries to show it.
+    if source_ext == ".grds":
+        ground_grid.normalize(dst)
+
+    # A harmonic run's curves live in sibling .fspdb/.hfpdb files (see
+    # ha_plots). Folding them in here, before indexing, means they appear in
+    # _table_index like any other table.
+    plots = {}
+    if source_ext == ".ha1s":
+        report("attaching plots")
+        plots = ha_plots.attach(dst, source_path)
+        if plots:
+            tables = [r[0] for r in dst.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' "
+                "AND name NOT LIKE 'sqlite_%' AND name != '_table_index'"
+            ).fetchall()]
+
     # Time-domain results are keyed by integer IDs and are far too large to
     # read raw, so we add name-resolved and rolled-up tables before indexing
     # (they need to appear in _table_index like any other table).
@@ -126,6 +148,9 @@ def import_study_to_sqlite(source_path: str, out_sqlite_path: str, progress_cb=N
         "rows_total": sum(t["rows"] for t in table_stats),
         "table_stats": table_stats,
         "derived_tables": derived,
+        # Empty when the run had no plots saved with it, or - the usual case
+        # for an upload - when only the .HA1S itself was available.
+        "attached_plots": plots,
         # Only meaningful for time-domain results - nothing else has per-step
         # tables worth dropping, so the flag would be misleading elsewhere.
         "lite_cache": bool(lite and is_td),
