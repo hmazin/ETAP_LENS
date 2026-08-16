@@ -11,6 +11,13 @@
   --sidebar-text-dim: #8a97ac;
   --sidebar-active: #1f2f57;
   --danger: #b3261e;
+  /* Export is the only action sharing a toolbar with four settings controls,
+     and the accent cannot carry it: the active subtable chip, the selected
+     menu item and every link are already accent blue, so an accent button
+     joins the pattern instead of breaking it. Green is unused elsewhere in
+     this UI and is what a spreadsheet download is expected to look like. */
+  --export: #15803d;
+  --export-text: #ffffff;
   --mono: "Cascadia Code", "Consolas", monospace;
 }
 
@@ -28,6 +35,10 @@
     --sidebar-text-dim: #7280;
     --sidebar-active: #1c2333;
     --danger: #ff6b6b;
+    /* Light green on dark text: on a dark page a deep green reads as muddy
+       rather than as a button, and this keeps the contrast well past AA. */
+    --export: #34d399;
+    --export-text: #06281a;
   }
 }
 
@@ -288,12 +299,12 @@ table.mini-table tbody tr:hover { background: var(--accent-dim); }
    else for "this does something": Load, Select This Folder, Violations
    Report. */
 .export-toggle-btn {
-  padding: 7px 14px; border-radius: 6px; border: 1px solid var(--accent);
-  background: var(--accent); color: #fff; font-size: 12.5px; font-weight: 600;
-  cursor: pointer; white-space: nowrap;
+  padding: 8px 16px; border-radius: 6px; border: none;
+  background: var(--export); color: var(--export-text);
+  font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap;
 }
-.export-toggle-btn:hover { filter: brightness(1.1); }
-.export-toggle-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.export-toggle-btn:hover { filter: brightness(1.08); }
+.export-toggle-btn:focus-visible { outline: 2px solid var(--export); outline-offset: 2px; }
 .export-panel {
   border: 1px solid var(--border); border-radius: 10px; background: var(--panel);
   padding: 12px 14px; margin-bottom: 10px;
