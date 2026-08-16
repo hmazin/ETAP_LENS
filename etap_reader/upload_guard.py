@@ -19,6 +19,8 @@ import os
 import sqlite3
 import time
 
+from . import ha_plots
+
 # An extension is a claim, not evidence. Each accepted file type has a header
 # that actually identifies it, and checking it costs a few bytes of read.
 #
@@ -33,9 +35,15 @@ BAK_MAGIC = b"TAPE"
 
 # Duplicated from study_result.STUDY_EXTENSIONS rather than imported: that
 # module imports this one, and a guard that cannot run until the thing it
-# guards has loaded is the wrong way round. Keep the two in step.
+# guards has loaded is the wrong way round. Kept in step by a test.
 STUDY_EXTENSIONS = {".sa1s", ".sa2s", ".lf1s", ".ul1s", ".tu1s", ".ha1s", ".grds"}
 MODEL_EXTENSIONS = {".mdf", ".bak"}
+
+# Files that may be uploaded but never opened on their own - a harmonic run's
+# plot curves, which mean nothing without the .HA1S they belong to. ha_plots
+# imports nothing from this package, so naming it here costs no cycle and
+# saves keeping a second copy of the list.
+COMPANION_EXTENSIONS = set(ha_plots.COMPANION_EXTENSIONS)
 
 _MAGIC_BY_EXT = {
     ".mdf": (MDF_MAGIC, "a SQL Server project database (.MDF)"),
@@ -122,6 +130,46 @@ def validate(path: str, filename: str, allowed_extensions=None):
     ext = check_extension(filename, allowed_extensions)
     if ext in MODEL_EXTENSIONS:
         return check_model_magic(path, ext)
+    check_is_sqlite(path)
+    return check_opens(path)
+
+
+def check_companion_name(filename: str, primary_filename: str) -> str:
+    """A companion is only ever "<the primary's stem>.<companion ext>".
+
+    This is what bounds the feature: a session can upload a .HA1S and at most
+    one file per companion extension beside it, because every other name is
+    refused. Without the stem check, "upload something next to this study"
+    would be an invitation to write arbitrary names into the session's
+    directory, and a name is the one part of an upload the server does not
+    otherwise control.
+    """
+    # A bare name, not a path. Comparing basenames would accept
+    # "../FS_H01.fspdb" for a primary called FS_H01.HA1S, and the caller joins
+    # the name it was given onto a directory - so the separator has to be
+    # refused here rather than assumed away by whatever ran before.
+    if filename != os.path.basename(filename) or any(c in filename for c in "\\/"):
+        raise RejectedUpload(f"'{filename}' is not a plain file name.")
+
+    ext = os.path.splitext(filename)[1].lower()
+    if ext not in COMPANION_EXTENSIONS:
+        raise RejectedUpload(
+            f"{ext or 'That file type'} is not a study companion. Expected one of "
+            f"{', '.join(sorted(COMPANION_EXTENSIONS))}.")
+
+    stem = os.path.splitext(filename)[0]
+    primary_stem = os.path.splitext(os.path.basename(primary_filename))[0]
+    if stem.lower() != primary_stem.lower():
+        raise RejectedUpload(
+            f"'{filename}' does not belong to '{primary_filename}'. ETAP names a run's "
+            f"plot files after the study case, so the two must share a name.")
+    return ext
+
+
+def validate_companion(path: str, filename: str, primary_filename: str):
+    """Pre-flight for a plot companion. Same content checks as a study - it
+    is opened with sqlite3 exactly the same way - plus the name rule."""
+    check_companion_name(filename, primary_filename)
     check_is_sqlite(path)
     return check_opens(path)
 

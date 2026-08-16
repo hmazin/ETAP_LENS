@@ -186,6 +186,15 @@ study case, and no indication of which run produced them. Attached, they gain
 `HAPlotIndex` (one row per curve) and `HAPlotCurves` (long format, one row per
 point with the device named).
 
+Locally the importer just reads them off disk. On a hosted instance they are
+uploaded alongside the study, which works because the upload directory is
+named after the filename *stem* - and a companion shares the study's stem by
+definition, so the two land side by side without either end knowing the
+other's path. That is also the containment rule: a companion upload is
+accepted only if its name is `<the primary's stem>.<companion ext>`, which
+bounds a session to at most one file per companion extension per study and
+leaves no room to choose an arbitrary name.
+
 An **empty companion is normal** - `FS_H01.hfpdb` in our sample project holds
 only `DeviceID_IID` and `SystemFrequency` with no curve tables at all, left
 over from an earlier run. Zero curves is not an error.

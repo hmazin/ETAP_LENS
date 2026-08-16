@@ -358,6 +358,101 @@ def _ingest(dest_path, filename, session_id):
     return jsonify({"job_id": job_id})
 
 
+def _stage_companion(dest_path, filename, primary):
+    """Validate a plot companion that has already been written to disk.
+
+    Nothing is imported here and no project is created - the file is only
+    parked next to its .HA1S so that ha_plots finds it when the study itself
+    is ingested a moment later. Uploading the primary is what starts work.
+    """
+    try:
+        upload_guard.validate_companion(dest_path, filename, primary)
+    except upload_guard.RejectedUpload as e:
+        # Only the offending file goes; the directory may already hold a
+        # valid companion, and one bad file should not discard it.
+        if os.path.isfile(dest_path):
+            os.remove(dest_path)
+        return jsonify({"error": str(e)}), 400
+    return jsonify({"staged": filename, "bytes": os.path.getsize(dest_path)})
+
+
+@app.route("/api/upload/companion", methods=["POST"])
+def api_upload_companion():
+    """Direct multipart upload of a .fspdb/.hfpdb beside its .HA1S.
+
+    Companions are keyed to the primary's upload directory, which is named
+    after the filename stem - the same stem the companion must have - so the
+    two arrive side by side without either knowing the other's path.
+    """
+    session_id, err = current_session()
+    if err:
+        return err
+    over = _quota_exceeded(session_id)
+    if over:
+        return over
+
+    f = request.files.get("file")
+    primary = secure_filename(request.form.get("primary", "")) or ""
+    if not f or not f.filename:
+        return jsonify({"error": "no file uploaded"}), 400
+    if not primary:
+        return jsonify({"error": "primary is required"}), 400
+
+    filename = secure_filename(f.filename) or "upload"
+    try:
+        upload_guard.check_companion_name(filename, primary)
+    except upload_guard.RejectedUpload as e:
+        return jsonify({"error": str(e)}), 400
+
+    dest_path = os.path.join(_upload_dir(session_id, primary), filename)
+    f.save(dest_path)
+    return _stage_companion(dest_path, filename, primary)
+
+
+@app.route("/api/upload/companion/complete", methods=["POST"])
+def api_upload_companion_complete():
+    """Signed-URL equivalent of the above: the object is already in storage,
+    pull it down beside its .HA1S."""
+    session_id, err = current_session()
+    if err:
+        return err
+    over = _quota_exceeded(session_id)
+    if over:
+        return over
+
+    data = request.get_json(silent=True) or {}
+    key = data.get("key", "")
+    primary = secure_filename(data.get("primary", "")) or ""
+    if not key.startswith(f"uploads/{session_id}/"):
+        return jsonify({"error": "Key does not belong to this session."}), 403
+    if not primary:
+        return jsonify({"error": "primary is required"}), 400
+
+    filename = secure_filename(os.path.basename(key)) or "upload"
+    try:
+        upload_guard.check_companion_name(filename, primary)
+    except upload_guard.RejectedUpload as e:
+        _storage.delete(key)
+        return jsonify({"error": str(e)}), 400
+
+    try:
+        if not _storage.exists(key):
+            return jsonify({"error": "Upload not found. Try uploading again."}), 404
+        size = _storage.size(key)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    if size > appconfig.MAX_UPLOAD_BYTES:
+        _storage.delete(key)
+        return jsonify({
+            "error": f"That file is larger than the {appconfig.MAX_UPLOAD_MB} MB limit."
+        }), 413
+
+    dest_path = os.path.join(_upload_dir(session_id, primary), filename)
+    _storage.download_to(key, dest_path)
+    _storage.delete(key)
+    return _stage_companion(dest_path, filename, primary)
+
+
 def _quota_exceeded(session_id):
     if not appconfig.REQUIRE_SESSION:
         return None
@@ -415,6 +510,15 @@ def api_upload_url():
 
     try:
         upload_guard.check_extension(filename, set(appconfig.ACCEPTED_EXTENSIONS))
+        # A study's plot companions are granted in the same breath rather than
+        # per call. A Turnstile token is single-use, so three grants would
+        # need three challenges - and the companions are already bounded to
+        # "<this study's stem>.<companion ext>", which is the whole reason
+        # they can be handed out without a challenge of their own.
+        companions = [secure_filename(n) or "" for n in (data.get("companions") or [])]
+        companions = [n for n in companions if n]
+        for name in companions:
+            upload_guard.check_companion_name(name, filename)
     except upload_guard.RejectedUpload as e:
         return jsonify({"error": str(e)}), 400
 
@@ -425,11 +529,15 @@ def api_upload_url():
         if not ok:
             return jsonify({"error": msg}), 403
 
-    key = f"uploads/{session_id}/{uuid.uuid4().hex}/{filename}"
-    signed = _storage.signed_upload_url(
-        key, content_type="application/octet-stream",
-        max_bytes=appconfig.MAX_UPLOAD_BYTES)
-    return jsonify({"key": key, "upload": signed,
+    def grant(name):
+        key = f"uploads/{session_id}/{uuid.uuid4().hex}/{name}"
+        return {"key": key, "upload": _storage.signed_upload_url(
+            key, content_type="application/octet-stream",
+            max_bytes=appconfig.MAX_UPLOAD_BYTES)}
+
+    primary = grant(filename)
+    return jsonify({**primary,
+                    "companions": [{"filename": n, **grant(n)} for n in companions],
                     "max_upload_mb": appconfig.MAX_UPLOAD_MB})
 
 

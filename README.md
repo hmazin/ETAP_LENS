@@ -24,7 +24,7 @@ Study result files (`.SA1S`, `.SA2S`, `.LF1S`, `.UL1S`, `.TU1S`, `.HA1S`, `.GRDS
 ## Features
 
 - **Load a project model** (`.oti`/`.mdf`/`.bak`) or **study results** — short circuit (`.SA1S` ANSI duty, `.SA2S` fault currents by type), load flow (`.LF1S` balanced, `.UL1S` unbalanced/3-phase), time-domain load flow (`.TU1S` TDLF — typically a full 8760-hour year), harmonics (`.HA1S` — both frequency scan and harmonic load flow), and ground grid (`.GRDS`)
-- **Harmonic plot curves folded in** — a harmonic run keeps its curves in `.fspdb`/`.hfpdb` files beside the `.HA1S`; open the `.HA1S` from a project folder and the impedance-vs-frequency sweeps, spectra and waveforms come with it, each point tagged with the device it belongs to
+- **Harmonic plot curves folded in** — a harmonic run keeps its curves in `.fspdb`/`.hfpdb` files beside the `.HA1S`; open the `.HA1S` from a project folder and the impedance-vs-frequency sweeps, spectra and waveforms come with it, each point tagged with the device it belongs to (they ride along on upload too, so a hosted instance gets them as well)
 - **Annual AC loss report** for TDLF results — energy losses split across transmission lines, cables, unit transformers and main power transformers; generation at the units; and net output at the point of interconnection, all derived on import and reconciled against ETAP's own system totals
 - **In-app folder browser** — navigate real folders and drives from inside the page (no native OS dialog limitations), with quick-access shortcuts to Desktop/Documents/Downloads/Home, and a "Select This Folder" action to scan and pick from everything loadable in it
 - **Load an entire folder at once** — paste or browse to a folder and get a pick-list of every `.oti`/`.mdf`/`.bak`/study-result file in it
@@ -158,6 +158,17 @@ web/config.js                  API base URL (empty = same origin)
 read_oti.py, dump_mdf.py         standalone CLI tools
 ```
 
+## Tests
+
+```bash
+python -m unittest discover -s tests -t .
+```
+
+Standard library only — no pytest, no extra dependency. The fixtures build small
+synthetic ETAP files in a temp folder rather than shipping a client's model, which
+also lets them cover shapes the projects on hand don't contain (a bus whose name has
+an underscore in it, a plot file with no curves, a grid that was never run).
+
 ## Platform notes
 
 This was built and tested on Windows against ETAP 24. A few pieces are Windows-specific:
@@ -183,6 +194,9 @@ reading before touching `etap_reader/`.
 - The "Single Line" view is a connectivity summary built from each element's `FromBus`/`ToBus`/`Bus`/`FromElement`/`ToElement` fields, not a rendering of the actual one-line diagram graphics (bus positions, symbol placement, wire routing). A graphical SLD renderer would be a substantial follow-on project.
 - Only tested against ETAP 24 output. Table/column names may differ across ETAP versions — if something doesn't map correctly, please open an issue with the version you're on.
 - `_R` rating sub-tables were empty in every project this was tested against; they're still browsable under "All Tables" if your project populates them.
+- A harmonic run's plot curves only arrive if the whole folder is opened (or picked, when hosted). Opening a lone `.HA1S` gets the results without the curves — the `.fspdb`/`.hfpdb` beside it are where those live. The Plot Curves view says so rather than looking empty.
+- `.fsp`/`.hfp` (the binary plot *settings* — axis ranges, which curves are ticked) are not decoded. The curve data they accompany is read in full, so this costs nothing but the ability to reproduce ETAP's exact plot styling.
+- `.XL1S` is recognized as an ETAP file but not read: the only sample available was empty, and its schema didn't match its name. See [FILE_FORMAT_NOTES.md](docs/FILE_FORMAT_NOTES.md).
 
 ## Ideas for contribution
 

@@ -499,9 +499,9 @@ function truncationNotice_lite() {
 function noPlotsNotice() {
   return `<div class="truncation-note">No plot curves came with this study. ETAP keeps them in
     <code>.fspdb</code> (frequency scan) and <code>.hfpdb</code> (waveform and spectrum) files
-    named after the study case, alongside the <code>.HA1S</code> - so either the run was saved
-    without plots, or only the <code>.HA1S</code> was uploaded. Opening the project folder in the
-    desktop app picks up the companions automatically.</div>`;
+    named after the study case, alongside the <code>.HA1S</code> - so this run was most likely
+    saved without plots. They are picked up automatically when the whole project folder is
+    opened; opening a single <code>.HA1S</code> on its own leaves them behind.</div>`;
 }
 
 function truncationNotice(rowCount, shown) {
@@ -1146,9 +1146,15 @@ async function openBoardForFileList(fileList) {
   // project identifiers that have no business leaving this machine to answer
   // "which studies are here". The list comes from /api/config, so the server
   // stays the one place that decides what is loadable.
+  // Companions are kept alongside the loadable files - a harmonic run's
+  // curves live in .fspdb/.hfpdb beside the .HA1S, and if they are dropped
+  // here the study uploads without them and the plots are simply gone.
+  // They get no tile of their own: the server's board ignores them.
   const allowed = (deployConfig.accepted_extensions || []).map(e => e.toLowerCase());
-  const files = allowed.length
-    ? picked.filter(f => allowed.some(ext => f.name.toLowerCase().endsWith(ext)))
+  const companionExts = (deployConfig.companion_extensions || []).map(e => e.toLowerCase());
+  const keep = allowed.concat(companionExts);
+  const files = keep.length
+    ? picked.filter(f => keep.some(ext => f.name.toLowerCase().endsWith(ext)))
     : picked;
 
   // Keyed by relative path, not name: the picker is recursive, so two
@@ -1408,21 +1414,8 @@ el('#folder-input').addEventListener('change', (e) => {
  *  Used when the API is hosted: a study result is routinely bigger than the
  *  32 MB a Cloud Run request body allows, so the bytes go straight to object
  *  storage and never pass through the service. */
-async function uploadViaSignedUrl(file) {
-  const status = el('#load-status');
-
-  status.textContent = 'Preparing upload...';
-  const grant = await api('/api/upload/url', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      filename: file.name,
-      turnstile_token: currentTurnstileToken(),
-    }),
-  });
-
-  status.textContent = `Uploading ${file.name} (${(file.size / 1e6).toFixed(0)} MB)...`;
-  const { url, headers } = grant.upload;
+async function putToSignedUrl(file, upload) {
+  const { url, headers } = upload;
   const absolute = url.startsWith('http');
   const put = await fetch(absolute ? url : apiUrl(url), {
     method: 'PUT',
@@ -1437,6 +1430,45 @@ async function uploadViaSignedUrl(file) {
     body: file,
   });
   if (!put.ok) throw new Error(`Upload failed (${put.status})`);
+}
+
+async function uploadViaSignedUrl(file, companions = []) {
+  const status = el('#load-status');
+
+  status.textContent = 'Preparing upload...';
+  // One grant, one Turnstile challenge, covering the study and its plot
+  // files. Asking again per companion would need a fresh token each time.
+  const grant = await api('/api/upload/url', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      filename: file.name,
+      companions: companions.map(c => c.name),
+      turnstile_token: currentTurnstileToken(),
+    }),
+  });
+
+  // Companions before the study: uploading the study is what triggers the
+  // import, and the importer looks for them at that moment.
+  for (const g of grant.companions || []) {
+    const c = companions.find(x => x.name === g.filename);
+    if (!c) continue;
+    status.textContent = `Uploading ${c.name}...`;
+    try {
+      await putToSignedUrl(c, g.upload);
+      await api('/api/upload/companion/complete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: g.key, primary: file.name }),
+      });
+    } catch (e) {
+      // The study is still worth having without its plots.
+      console.warn(`Companion ${c.name} did not upload: ${e.message}`);
+    }
+  }
+
+  status.textContent = `Uploading ${file.name} (${(file.size / 1e6).toFixed(0)} MB)...`;
+  await putToSignedUrl(file, grant.upload);
 
   status.textContent = 'Reading file...';
   const { job_id } = await api('/api/upload/complete', {
@@ -1447,7 +1479,25 @@ async function uploadViaSignedUrl(file) {
   return job_id;
 }
 
-async function uploadDirect(file) {
+async function uploadDirect(file, companions = []) {
+  // Companions first - see uploadViaSignedUrl. A failure here is logged and
+  // stepped over: losing the plots is better than losing the study.
+  for (const c of companions) {
+    el('#load-status').textContent = `Uploading ${c.name}...`;
+    const cfd = new FormData();
+    cfd.append('file', c);
+    cfd.append('primary', file.name);
+    try {
+      const cres = await fetch(apiUrl('/api/upload/companion'), {
+        method: 'POST', headers: sessionHeaders(), body: cfd,
+      });
+      if (!cres.ok) throw new Error((await cres.json().catch(() => ({}))).error || cres.statusText);
+    } catch (e) {
+      console.warn(`Companion ${c.name} did not upload: ${e.message}`);
+    }
+  }
+
+  el('#load-status').textContent = `Uploading ${file.name}...`;
   const fd = new FormData();
   fd.append('file', file);
   const res = await fetch(apiUrl('/api/upload'), {
@@ -1460,14 +1510,36 @@ async function uploadDirect(file) {
   return (await res.json()).job_id;
 }
 
+/** The plot files sitting beside a study in the picked folder, matched the
+ *  way ETAP names them: same stem, companion extension, same subfolder. */
+function companionsOf(file) {
+  const exts = (deployConfig.companion_extensions || []).map(e => e.toLowerCase());
+  if (!exts.length) return [];
+  const rel = file.webkitRelativePath || file.name;
+  const dir = rel.slice(0, rel.length - (file.name.length));
+  const stem = file.name.replace(/\.[^.]*$/, '').toLowerCase();
+
+  return [...boardFiles.entries()]
+    .filter(([key, f]) => {
+      if (f === file) return false;
+      // Same folder: a project can hold the same case name under two
+      // revision folders, and pairing across them would attach the wrong run.
+      if (key.slice(0, key.length - f.name.length) !== dir) return false;
+      const name = f.name.toLowerCase();
+      return name.replace(/\.[^.]*$/, '') === stem && exts.some(e => name.endsWith(e));
+    })
+    .map(([, f]) => f);
+}
+
 async function uploadAndLoad(file) {
   setLoadersDisabled(true);
   el('#load-status').textContent = `Uploading ${file.name}...`;
   el('#load-status').className = '';
   try {
+    const companions = companionsOf(file);
     const jobId = deployConfig.require_session
-      ? await uploadViaSignedUrl(file)
-      : await uploadDirect(file);
+      ? await uploadViaSignedUrl(file, companions)
+      : await uploadDirect(file, companions);
     pollJob(jobId);
   } catch (e) {
     el('#load-status').textContent = 'Error: ' + e.message;

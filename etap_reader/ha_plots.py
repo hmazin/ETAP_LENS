@@ -49,29 +49,32 @@ _X_AXIS_SUFFIXES = {"Hz": "Frequency (Hz)", "Order": "Harmonic Order"}
 def companions_for(ha1s_path: str):
     """Sibling plot databases sitting next to a .HA1S, as
     [(path, plot_kind), ...]. Empty when there are none - which is the normal
-    case for an uploaded file, where only the .HA1S itself crossed the wire."""
-    stem, _ = os.path.splitext(ha1s_path)
-    found = []
-    for ext, kind in COMPANION_EXTENSIONS.items():
-        # ETAP's own casing is lowercase here while the .HA1S is upper, so
-        # neither can be assumed; check the directory rather than guessing.
-        candidate = stem + ext
-        if not os.path.isfile(candidate):
-            candidate = _case_insensitive_sibling(stem + ext)
-        if candidate:
-            found.append((candidate, kind))
-    return found
+    case for an uploaded file, where only the .HA1S itself crossed the wire.
 
-
-def _case_insensitive_sibling(path: str):
-    folder, target = os.path.dirname(path), os.path.basename(path).lower()
+    Resolved by reading the directory rather than by testing constructed
+    paths. ETAP writes the results upper-case (.HA1S) and the companions
+    lower-case (.fspdb), so neither can be assumed - and os.path.isfile would
+    paper over that on Windows while failing on the Linux container the
+    hosted build runs in. Listing once behaves the same on both, and reports
+    the name the file actually has.
+    """
+    folder = os.path.dirname(ha1s_path) or "."
+    stem = os.path.splitext(os.path.basename(ha1s_path))[0].lower()
     try:
-        for fn in os.listdir(folder or "."):
-            if fn.lower() == target:
-                return os.path.join(folder, fn)
+        entries = os.listdir(folder)
     except OSError:
-        pass
-    return None
+        return []
+
+    found = []
+    for fn in entries:
+        name, ext = os.path.splitext(fn)
+        kind = COMPANION_EXTENSIONS.get(ext.lower())
+        if kind and name.lower() == stem:
+            found.append((os.path.join(folder, fn), kind))
+    # Directory order is arbitrary; a stable order keeps HAPlotIndex stable
+    # between imports of the same study.
+    found.sort(key=lambda pair: os.path.basename(pair[0]).lower())
+    return found
 
 
 def _parse_curve_name(table: str, devices):

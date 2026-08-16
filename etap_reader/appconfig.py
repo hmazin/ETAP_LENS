@@ -20,6 +20,8 @@ exposed rather than opt out.
 """
 import os
 
+from . import ha_plots
+
 LOCAL = "local"
 HOSTED = "hosted"
 
@@ -147,6 +149,11 @@ class _LazyExtensions:
 
 ACCEPTED_EXTENSIONS = _LazyExtensions()
 
+# Plot databases that ride along with a .HA1S rather than opening on their
+# own. Unlike ACCEPTED_EXTENSIONS this needs no laziness: ha_plots pulls in
+# nothing from this package, so there is no cycle to defer around.
+COMPANION_EXTENSIONS = frozenset(ha_plots.COMPANION_EXTENSIONS)
+
 
 def public_config():
     """What the frontend needs in order to render the right UI. Deliberately
@@ -160,5 +167,9 @@ def public_config():
         "require_session": REQUIRE_SESSION,
         "turnstile_site_key": TURNSTILE_SITE_KEY,  # public by design
         "accepted_extensions": sorted(ACCEPTED_EXTENSIONS),
+        # Not loadable on their own, but worth holding on to when a folder is
+        # picked: these carry a harmonic run's plot curves and are uploaded
+        # alongside the .HA1S they belong to.
+        "companion_extensions": sorted(COMPANION_EXTENSIONS),
         "can_read_models": CAN_READ_MODELS,
     }
