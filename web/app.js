@@ -788,14 +788,40 @@ async function showAllTables() {
   const panel = el('#index-export-panel');
   const btn = el('#index-export');
   const stem = `${currentManifest?.db_name || 'project'}_table_index`;
+  const nonEmpty = () => tables.filter(t => t.rows > 0);
+  const totalRows = () => nonEmpty().reduce((a, t) => a + t.rows, 0);
+
   function renderPanel() {
     panel.innerHTML = `
-      <div class="export-note">Exports the ${shown.length} table(s) currently listed - name, category and row count.</div>
+      <div class="export-note"><strong>The whole database.</strong> One sheet per table with its
+        contents - ${nonEmpty().length} non-empty table(s), ${totalRows().toLocaleString()} rows.
+        Tables over 50,000 rows are written truncated and the index sheet says which.</div>
       <div class="export-panel-actions">
-        <button type="button" data-act="csv">Download CSV</button>
-        <button type="button" data-act="xlsx">Download Excel (.xlsx)</button>
+        <button type="button" data-act="all">Download all table data (.xlsx)</button>
+      </div>
+      <div class="export-note" style="margin-top:12px">Or just the list of what is here -
+        ${shown.length} table(s) currently shown, with names, categories and row counts.</div>
+      <div class="export-panel-actions">
+        <button type="button" data-act="csv">Index as CSV</button>
+        <button type="button" data-act="xlsx">Index as Excel (.xlsx)</button>
       </div>
       <div class="export-status" id="index-export-status"></div>`;
+    panel.querySelector('[data-act="all"]').addEventListener('click', async () => {
+      const status = el('#index-export-status');
+      status.textContent = `Building workbook (${nonEmpty().length} sheets)... this can take a minute.`;
+      try {
+        const res = await fetch(apiUrl(`/api/project/${currentProjectId}/export_all`),
+                                { headers: sessionHeaders() });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({ error: res.statusText }));
+          throw new Error(body.error || res.statusText);
+        }
+        downloadBlob(await res.blob(), `${stem.replace('_table_index', '')}_all_tables.xlsx`);
+        status.textContent = '';
+      } catch (e) {
+        status.textContent = e.message;
+      }
+    });
     panel.querySelector('[data-act="csv"]').addEventListener('click',
       () => downloadCsv(INDEX_COLUMNS, indexRows(), `${stem}.csv`));
     panel.querySelector('[data-act="xlsx"]').addEventListener('click', async () => {

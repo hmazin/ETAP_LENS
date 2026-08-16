@@ -53,6 +53,71 @@ def table_to_xlsx_bytes(columns, rows, sheet_name="Data"):
     return buf
 
 
+def _unique_sheet_title(title, used):
+    """Excel caps a sheet name at 31 characters and forbids []:*?/\\, and two
+    sheets cannot share a name. ETAP table names are short enough that
+    collisions are rare, but H1-H8 history variants of a long name do collide
+    once truncated, and one collision fails the whole workbook."""
+    clean = "".join("_" if c in "[]:*?/\\" else c for c in str(title))[:31] or "Sheet"
+    if clean.lower() not in used:
+        used.add(clean.lower())
+        return clean
+    for n in range(2, 1000):
+        suffix = f"~{n}"
+        candidate = clean[:31 - len(suffix)] + suffix
+        if candidate.lower() not in used:
+            used.add(candidate.lower())
+            return candidate
+    raise ValueError(f"could not find a free sheet name for {title!r}")
+
+
+def all_tables_xlsx_bytes(sheet_source, index_columns, index_rows):
+    """A workbook holding every table's contents, one sheet each.
+
+    `sheet_source` yields (title, columns, rows) and is consumed lazily: a
+    project model has 500 non-empty tables and a time-domain study has a
+    million rows, so nothing here holds more than one table at a time.
+
+    Written in openpyxl's write-only mode for the same reason - the normal
+    mode keeps every cell as an object until save, which a million rows will
+    not survive inside a container.
+
+    The first sheet is the index, so a workbook of 500 tabs opens on something
+    that says what is in it.
+    """
+    from openpyxl.cell import WriteOnlyCell  # noqa: PLC0415
+
+    wb = Workbook(write_only=True)
+    used = set()
+
+    def header(ws, columns):
+        cells = []
+        for col in columns:
+            c = WriteOnlyCell(ws, value=col)
+            c.font = HEADER_FONT
+            c.fill = HEADER_FILL
+            cells.append(c)
+        ws.append(cells)
+
+    index = wb.create_sheet(title=_unique_sheet_title("Index", used))
+    index.freeze_panes = "A2"
+    header(index, index_columns)
+    for row in index_rows:
+        index.append([row.get(c) for c in index_columns])
+
+    for title, columns, rows in sheet_source:
+        ws = wb.create_sheet(title=_unique_sheet_title(title, used))
+        ws.freeze_panes = "A2"
+        header(ws, columns)
+        for row in rows:
+            ws.append([row.get(c) for c in columns])
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf
+
+
 def multi_sheet_xlsx_bytes(sheets):
     """sheets: list of (title, columns, rows) tuples - one sheet each.
     Rows whose AlertType is "Critical" are highlighted."""

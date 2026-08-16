@@ -619,6 +619,59 @@ def api_table(project_id, table_name):
                     "truncated": len(rows) < row_count})
 
 
+# Rows per sheet in a whole-database export. Excel's own ceiling is ~1.05M,
+# but a sheet nobody can scroll is not the constraint that matters: a
+# time-domain study holds 473k rows in each of two tables, and writing them
+# costs minutes and a workbook nothing opens comfortably. Tables past this are
+# written truncated and the index sheet says which.
+EXPORT_ROWS_PER_SHEET = 50_000
+
+
+@app.route("/api/project/<project_id>/export_all")
+def api_export_all(project_id):
+    """Every table's contents in one workbook, a sheet each.
+
+    Distinct from the client-side index export, which lists what the tables
+    are. This is what they hold.
+    """
+    conn, manifest = _db(project_id)
+    if not conn:
+        return jsonify({"error": "unknown project"}), 404
+
+    category_set = manifest.get("category_set", "model")
+    tables = conn.execute(
+        "SELECT table_name, row_count FROM _table_index ORDER BY table_name").fetchall()
+
+    index_columns = ["Table", "Category", "Rows", "Exported"]
+    index_rows = []
+    included = []
+    for name, count in tables:
+        count = count or 0
+        index_rows.append({
+            "Table": name,
+            "Category": cat_defs.category_for_table(name, category_set) or "",
+            "Rows": count,
+            "Exported": min(count, EXPORT_ROWS_PER_SHEET) if count else "empty - no sheet",
+        })
+        if count:
+            included.append(name)
+
+    def sheets():
+        for name in included:
+            cur = conn.execute(f'SELECT * FROM "{name}" LIMIT {EXPORT_ROWS_PER_SHEET}')
+            cols = [d[0] for d in cur.description]
+            yield name, cat_defs.order_columns(cols), _rows_as_dicts(cur)
+
+    try:
+        buf = xlsx_export.all_tables_xlsx_bytes(sheets(), index_columns, index_rows)
+    finally:
+        conn.close()
+
+    filename = secure_filename(f"{manifest['db_name']}_all_tables.xlsx")
+    return send_file(buf, as_attachment=True, download_name=filename,
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
 @app.route("/api/project/<project_id>/overview")
 def api_overview(project_id):
     conn, manifest = _db(project_id)
