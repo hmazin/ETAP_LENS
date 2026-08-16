@@ -245,7 +245,11 @@ table.mini-table tbody tr:hover { background: var(--accent-dim); }
 .stat-card .num { font-size: 26px; font-weight: 700; color: var(--accent); }
 .stat-card .lbl { font-size: 12.5px; color: var(--text-dim); margin-top: 2px; }
 
-.table-toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+/* Wrapping is not cosmetic here. The toolbar needs ~860px and #content hides
+   horizontal overflow, so below about 1100px the last controls - Export and
+   the row count - sat outside the viewport with no way to scroll to them.
+   They were not hard to find; they were unreachable. */
+.table-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 10px; }
 .table-toolbar input[type=search] {
   flex: 1; max-width: 320px; padding: 7px 10px; border-radius: 6px; border: 1px solid var(--border);
   background: var(--panel); color: var(--text); font-size: 13px;
