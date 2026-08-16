@@ -117,7 +117,7 @@ function renderDataTable(columns, rows, exportName) {
       <select id="${wrapId}_stat">
         ${STAT_OPTIONS.map(o => `<option value="${o.value}">${o.label}</option>`).join('')}
       </select>
-      <button class="export-toggle-btn" id="${wrapId}_exportbtn">&#11015; Export</button>
+      <button class="export-toggle-btn" id="${wrapId}_exportbtn">&#11015; Export to Excel / CSV &#9662;</button>
       <span class="row-count" id="${wrapId}_count"></span>
     </div>
     <div class="col-panel hidden" id="${wrapId}_colpanel"></div>
@@ -359,6 +359,10 @@ function renderDataTable(columns, rows, exportName) {
   exportBtn.addEventListener('click', () => {
     renderExportPanel(); // refresh row/column counts to match current filter state
     exportPanel.classList.toggle('hidden');
+    // The caret says whether pressing it opens or closes, so a first click
+    // that "did nothing visible" is not a plausible reading of it.
+    const open = !exportPanel.classList.contains('hidden');
+    exportBtn.innerHTML = `&#11015; Export to Excel / CSV ${open ? '&#9652;' : '&#9662;'}`;
   });
 
   applyFilter('');
