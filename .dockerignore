@@ -18,3 +18,6 @@ requirements.txt
 # Desktop-only CLI helpers; they import pyodbc, which the image does not carry.
 read_oti.py
 dump_mdf.py
+
+# Tests run in CI and on a developer's machine, never inside the image.
+tests/

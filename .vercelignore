@@ -5,6 +5,7 @@
 # files, and an ephemeral filesystem under a cache that needs to persist.
 app.py
 etap_reader/
+tests/
 requirements.txt
 requirements-hosted.txt
 Dockerfile
