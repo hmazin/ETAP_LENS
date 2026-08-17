@@ -132,8 +132,35 @@ class HarmonicCategories(unittest.TestCase):
 
     def test_alerts_category_is_discoverable_by_the_violations_report(self):
         """The report picks categories whose key contains alert/violation."""
-        keys = categories.STUDY_CATEGORIES["harmonics"]
-        self.assertTrue([k for k in keys if "alert" in k.lower() or "violation" in k.lower()])
+        self.assertTrue(categories.alert_categories("harmonics"))
+
+
+class ViolationsReportOffer(unittest.TestCase):
+    """The overview offers the report; the report builds it. They must agree
+    on which categories count, or the button produces an empty download."""
+
+    def test_ground_grid_reports_no_violations(self):
+        """A ground grid computes touch and step voltages and leaves the
+        verdict to the engineer - there is nothing to put in the report, so
+        the overview must not offer one."""
+        self.assertEqual(categories.alert_categories("ground_grid"), [])
+
+    def test_every_other_study_type_does_report_violations(self):
+        for category_set in categories.STUDY_CATEGORIES:
+            if category_set == "ground_grid":
+                continue
+            with self.subTest(category_set=category_set):
+                self.assertTrue(
+                    categories.alert_categories(category_set),
+                    f"{category_set} would offer a violations report with no "
+                    f"category to fill it")
+
+    def test_named_categories_actually_exist_in_the_set(self):
+        for category_set in categories.STUDY_CATEGORIES:
+            defined = categories.categories_for_set(category_set)
+            for key in categories.alert_categories(category_set):
+                with self.subTest(category_set=category_set, key=key):
+                    self.assertIn(key, defined)
 
 
 if __name__ == "__main__":

@@ -505,6 +505,24 @@ def categories_for_set(category_set: str):
     return STUDY_CATEGORIES[category_set]
 
 
+def alert_categories(category_set: str):
+    """The categories of a study type that hold violations and alerts.
+
+    Selected by key rather than by a flag on each category, which is how the
+    violations report has always found them. Kept here because two callers
+    need the same answer: the report itself, and the overview deciding
+    whether to offer it. Asking separately is how you end up with a button
+    that produces an empty file.
+
+    An empty list means this study type reports no violations at all - a
+    ground grid computes touch and step voltages and leaves the judgement to
+    the engineer - which is different from a study that checks and finds
+    none, and the two should not look the same on screen.
+    """
+    return [k for k in categories_for_set(category_set)
+            if "alert" in k.lower() or "violation" in k.lower()]
+
+
 def category_for_table(table_name, category_set: str = "model"):
     for key, cat in categories_for_set(category_set).items():
         if table_name in cat["tables"]:

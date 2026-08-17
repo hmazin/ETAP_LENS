@@ -684,7 +684,7 @@ def api_violations_report(project_id):
     category_set = manifest.get("category_set", "model")
     categories = cat_defs.categories_for_set(category_set)
 
-    relevant_keys = [k for k in categories if "alert" in k.lower() or "violation" in k.lower()]
+    relevant_keys = cat_defs.alert_categories(category_set)
     seen_tables = set()
     sheets = []
     for key in relevant_keys:
@@ -805,6 +805,12 @@ def api_overview(project_id):
         if _table_exists(conn, table)
     ]
 
+    # Whether to offer the violations report, and whether there is anything
+    # in it. Computed from the same counts the summary tiles use, so the
+    # button cannot promise a file the report cannot produce.
+    alert_keys = cat_defs.alert_categories(category_set)
+    by_key = {c["key"]: c["row_count"] for c in equipment_counts}
+
     result = {
         # Sanitized, like every other manifest that leaves this process. The
         # raw one carries the session id - a bearer token - along with the
@@ -813,6 +819,12 @@ def api_overview(project_id):
         "manifest": project_cache._public_manifest(manifest),
         "info_tables": info_tables,
         "equipment_counts": equipment_counts,
+        "violations": {
+            # False for a study type that reports no violations at all, which
+            # is not the same as one that checked and found none.
+            "reported": bool(alert_keys),
+            "rows": sum(by_key.get(k, 0) for k in alert_keys),
+        },
     }
     conn.close()
     return jsonify(result)

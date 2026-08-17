@@ -182,6 +182,10 @@ code { background: var(--accent-dim); padding: 1px 5px; border-radius: 4px; font
 }
 .violations-report-btn:hover { filter: brightness(1.1); }
 .violations-report-btn:disabled { opacity: .6; cursor: default; }
+/* "Checked, and clean" - a statement, not an action. Deliberately not the
+   danger colour: red here reads as "violations found" at a glance, which is
+   the opposite of what it says. */
+.violations-clean { font-size: 12.5px; color: var(--text-dim); white-space: nowrap; }
 
 .card {
   background: var(--panel); border: 1px solid var(--border); border-radius: 10px;

@@ -636,6 +636,31 @@ function infoCard(t) {
   };
 }
 
+/** The violations report has three states, and collapsing them into one
+ *  button was the bug: every study got a red call-to-action, and clicking it
+ *  was the only way to learn there was nothing in it.
+ *
+ *  - not reported: this study type has no violations to report at all. A
+ *    ground grid computes touch and step voltages and leaves the judgement
+ *    to the engineer. Say nothing rather than offer an empty file.
+ *  - reported, none found: worth stating plainly. "Checked, clean" is a
+ *    result an engineer wants, and it is not the same as "not checked".
+ *  - reported, some found: the button, with the count, so the number is
+ *    visible before downloading anything. */
+function violationsBoxHtml(v) {
+  if (!v || !v.reported) return '';
+  if (!v.rows) {
+    return `<div class="violations-report-box">
+              <div class="violations-clean">No violations or alerts flagged in this study.</div>
+            </div>`;
+  }
+  return `<div class="violations-report-box">
+            <button id="violations-report-btn" class="violations-report-btn">&#128202;
+              Violations Report (.xlsx) &middot; ${v.rows.toLocaleString()}</button>
+            <div class="export-status" id="violations-report-status"></div>
+          </div>`;
+}
+
 async function showOverview() {
   content().innerHTML = '<div class="loading">Loading overview...</div>';
   const data = await api(`/api/project/${currentProjectId}/overview`);
@@ -652,11 +677,7 @@ async function showOverview() {
         <div class="page-title">${CATEGORY_SET_LABELS[categorySet] || 'Overview'}</div>
         <div class="page-desc">${m.db_name} &middot; loaded from ${m.db_kind.toUpperCase()} &middot; ${m.stats.tables} tables, ${m.stats.rows_total.toLocaleString()} total rows</div>
       </div>
-      ${categorySet !== 'model' ? `
-        <div class="violations-report-box">
-          <button id="violations-report-btn" class="violations-report-btn">&#128202; Violations Report (.xlsx)</button>
-          <div class="export-status" id="violations-report-status"></div>
-        </div>` : ''}
+      ${violationsBoxHtml(data.violations)}
     </div>
     ${m.stats.lite_cache ? `<div class="truncation-note">Summary tables only. The per-step
       detail ETAP produced (one row per branch per time step) was discarded after the
