@@ -1303,7 +1303,7 @@ function clearCandidateBoxes() {
   });
 }
 
-async function pollJob(jobId) {
+async function pollJob(jobId, onLoaded = null) {
   const statusBox = el('#load-status');
   while (true) {
     const job = await api(`/api/load/status/${jobId}`);
@@ -1319,7 +1319,8 @@ async function pollJob(jobId) {
       setLoadersDisabled(false);
       clearCandidateBoxes();
       await refreshRecentProjects();
-      await activateProject(job.project_id);
+      if (onLoaded) await onLoaded(job.project_id);
+      else await activateProject(job.project_id);
       return;
     }
     const stageLabel = {
@@ -1561,7 +1562,7 @@ function companionsOf(file) {
     .map(([, f]) => f);
 }
 
-async function uploadAndLoad(file) {
+async function uploadAndLoad(file, onLoaded = null) {
   setLoadersDisabled(true);
   el('#load-status').textContent = `Uploading ${file.name}...`;
   el('#load-status').className = '';
@@ -1570,7 +1571,7 @@ async function uploadAndLoad(file) {
     const jobId = deployConfig.require_session
       ? await uploadViaSignedUrl(file, companions)
       : await uploadDirect(file, companions);
-    pollJob(jobId);
+    await pollJob(jobId, onLoaded);
   } catch (e) {
     el('#load-status').textContent = 'Error: ' + e.message;
     el('#load-status').className = 'error';
