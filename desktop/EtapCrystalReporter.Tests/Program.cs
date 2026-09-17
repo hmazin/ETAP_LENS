@@ -160,7 +160,45 @@ internal static class Tests
                 using (var cancel = new CancellationTokenSource())
                 { results.Clear(); service.RunBatch(new[] { good, good }, cancel.Token, r => { results.Add(r); cancel.Cancel(); }); Equal(1, results.Count); }
             });
-            Console.WriteLine(failures == 0 ? "All 17 tests passed." : failures + " test(s) failed.");
+            Test("Report header changes never mutate the source or numerical study data", delegate
+            {
+                string path = Fixture("headers.SA1S", 1);
+                Execute(path, "CREATE TABLE Headr(SN TEXT, Project TEXT, Date TEXT, PSRev TEXT); INSERT INTO Headr VALUES ('Original SN','Original project','Original date','24.0');");
+                string before = FileValidator.Sha256(path);
+                using (var db = databases.Open(path))
+                {
+                    using (var table = db.ReadTable("Headr"))
+                    {
+                        ReportHeaders.ApplyToTable(table, new Dictionary<string, string> { { "sn", null }, { "project", "Team <A> & {literal}" }, { "date", "" } });
+                        Equal("Original SN", table.Rows[0]["SN"]); Equal("Original project", table.Rows[0]["Project"]);
+                        Equal("Original date", table.Rows[0]["Date"]); Equal("24.0", table.Rows[0]["PSRev"]);
+                    }
+                    using (var table = db.ReadTable("Headr")) Equal("Original SN", table.Rows[0]["SN"]);
+                    using (var table = db.ReadTable("IBus"))
+                    {
+                        ReportHeaders.ApplyToTable(table, new Dictionary<string, string> { { "project", "New" } });
+                        Equal(13.8, table.Rows[0]["kV"]);
+                    }
+                }
+                Equal(before, FileValidator.Sha256(path));
+            });
+            Test("Revision and configuration presentation never changes study-case data", delegate
+            {
+                using (var table = new DataTable("ISCStudyCase"))
+                {
+                    table.Columns.Add("Revision", typeof(string)); table.Columns.Add("Config", typeof(string)); table.Columns.Add("StudyType", typeof(int));
+                    table.Rows.Add("Old", "Old configuration", 1);
+                    ReportHeaders.ApplyToTable(table, new Dictionary<string, string> { { "revision", "B" }, { "configuration", "Normal" } });
+                    Equal("Old", table.Rows[0]["Revision"]); Equal("Old configuration", table.Rows[0]["Config"]); Equal(1, table.Rows[0]["StudyType"]);
+                }
+            });
+            Test("Header allowlist and text limits fail explicitly", delegate
+            {
+                Throws<InvalidDataException>(() => ReportHeaders.Validate(new Dictionary<string, string> { { "StudyType", "5" } }));
+                Throws<InvalidDataException>(() => ReportHeaders.Validate(new Dictionary<string, string> { { "date", new string('x', 33) } }));
+                Throws<InvalidDataException>(() => ReportHeaders.Validate(new Dictionary<string, string> { { "project", "A\nB" } }));
+            });
+            Console.WriteLine(failures == 0 ? "All 20 tests passed." : failures + " test(s) failed.");
             return failures == 0 ? 0 : 1;
         }
         catch (Exception ex) { Console.Error.WriteLine(ex.ToString()); return 1; }

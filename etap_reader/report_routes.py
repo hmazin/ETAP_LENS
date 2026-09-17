@@ -5,11 +5,14 @@ import os
 import tempfile
 import time
 import zipfile
+import re
+import sqlite3
+from pathlib import Path
 
 from flask import jsonify, request, send_file
 from werkzeug.utils import secure_filename
 
-from . import appconfig, project_cache, report_sources, sessions
+from . import appconfig, project_cache, report_sources, sessions, report_headers
 from .report_service import CATALOG, HASH, LEASE_SECONDS, MAX_PDF_BYTES, ReportError, ReportService, public_job
 from .report_store import RecordStore
 
@@ -90,9 +93,38 @@ def register(app, objects, current_session, scoped_session):
     def catalog(sid):
         available = service.availability() if enabled() else {}
         return jsonify(enabled=enabled(), online=bool(available), retention_days=7,
+                       header_fields=report_headers.public_fields(),
+                       headers_available=bool(service.availability(require_headers=True)) if enabled() else False,
                        message="" if available else "The reporting service is offline. Your studies remain available to browse.",
                        templates=[{**{k: v for k, v in t.items() if k != "path"}, "available": t["id"] in available} for t in CATALOG],
                        studies=service.studies(sid, scoped_session()))
+
+    @app.get("/api/reports/studies/<project_id>/headers")
+    @browser
+    def study_headers(sid, project_id):
+        if not re.fullmatch(r"[a-f0-9]{16}", project_id):
+            raise ReportError("Study not found.", 404)
+        manifest = project_cache.get_manifest(project_id, scoped_session())
+        if not manifest or not manifest.get("report_source"):
+            raise ReportError("Study not found. Reload it and try again.", 404)
+        source = manifest["report_source"]
+        if not objects.exists(source["key"]):
+            raise ReportError("The original study has expired. Reload it first.", 410)
+        values = source.get("headers")
+        if values is None:
+            # Earlier uploads predate header metadata. Read their original copy.
+            with tempfile.TemporaryDirectory(prefix="etap-header-") as directory:
+                path = Path(directory) / "study.sqlite"
+                objects.download_to(source["key"], str(path))
+                conn = sqlite3.connect(path.as_uri() + "?mode=ro&immutable=1", uri=True)
+                try:
+                    conn.execute("PRAGMA trusted_schema=OFF")
+                    deadline = time.monotonic() + 15
+                    conn.set_progress_handler(lambda: int(time.monotonic() > deadline), 10000)
+                    values = report_headers.read_values(conn)
+                finally:
+                    conn.close()
+        return jsonify(values=values, source_sha256=source["sha256"])
 
     @app.route("/api/reports/jobs", methods=["GET", "POST"])
     @browser
@@ -160,12 +192,13 @@ def register(app, objects, current_session, scoped_session):
     @worker
     def claim():
         data = body()
-        job = service.claim(data.get("worker_id"), data.get("templates"))
+        job = service.claim(data.get("worker_id"), data.get("templates"), data.get("header_version", 0))
         if not job:
             return jsonify(job=None)
         return jsonify(job={"id": job["id"], "session": job["session"], "lease": job["_lease"],
                             "source_sha256": job["source_sha256"], "study_type": job["study_type"],
                             "template": job["template"], "template_hashes": job["_template"],
+                            "headers": job.get("headers", {}),
                             "source_bytes": job["_source"]["bytes"]})
 
     @app.post("/api/report-worker/source")

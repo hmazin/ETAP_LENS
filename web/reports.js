@@ -1,6 +1,7 @@
 /* Report generation uses original study files; table exports remain in app.js. */
 window.ETAPReports = (() => {
   let dispose = () => {};
+  let headerDraft = {}, headerExpanded = false;
   const post = (path, body) => api(path, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
   const requestId = () => crypto.randomUUID().replaceAll('-', '');
   const date = value => new Date(value * 1000).toLocaleString();
@@ -16,6 +17,8 @@ window.ETAPReports = (() => {
     let timer, observer, previewUrl, catalog, jobs = [], mode = 'single', busy = false, destroyPdf = () => {};
     let chosen = projectId, templateId = '', selected = new Set(), kinds = new Set(['summary']);
     let includeTimestamp = false, pendingRequest = null, previewRequest = 0, refreshing = false;
+    let headers = {...headerDraft};
+    const originalHeaders = new Map(), headerRequests = new Set();
     const active = () => root.isConnected;
     const $ = selector => root.querySelector(selector);
     const cleanup = () => {
@@ -79,6 +82,51 @@ window.ETAPReports = (() => {
         (skipped.length ? `<details><summary>${skipped.length} selection${skipped.length === 1 ? '' : 's'} unavailable</summary><ul>${skipped.map(s => `<li>${esc(s)}</li>`).join('')}</ul></details>` : '');
     }
 
+    function saveHeaderDraft() {
+      headerDraft = {...headers}; pendingRequest = null;
+      const count = Object.keys(headers).length;
+      const label = $('#report-header-summary');
+      if (label) label.textContent = `Customize header fields${count ? ` · ${count} changed` : ''}`;
+    }
+
+    function headerFields() {
+      return (catalog.header_fields || []).map(field => {
+        const changed = Object.hasOwn(headers, field.id), value = headers[field.id];
+        const setting = !changed ? 'original' : value === null ? 'hide' : 'custom';
+        return `<div class="report-header-field" data-header-field="${esc(field.id)}">
+          <label for="report-header-${esc(field.id)}-mode">${esc(field.label)}</label>
+          <select id="report-header-${esc(field.id)}-mode" data-header-mode="${esc(field.id)}" aria-label="${esc(field.label)} setting">
+            <option value="original" ${setting === 'original' ? 'selected' : ''}>Keep original</option>
+            <option value="custom" ${setting === 'custom' ? 'selected' : ''}>Custom text</option>
+            <option value="hide" ${setting === 'hide' ? 'selected' : ''}>Hide label &amp; value</option>
+          </select>
+          <input type="text" data-header-value="${esc(field.id)}" aria-label="${esc(field.label)} custom text" maxlength="${field.max_length}" value="${esc(value ?? '')}" placeholder="Enter ${esc(field.label.toLowerCase())}" ${setting !== 'custom' ? 'hidden disabled' : ''}>
+          <p class="report-header-original" data-header-original="${esc(field.id)}"></p>
+        </div>`;
+      }).join('');
+    }
+
+    async function loadHeaderValues() {
+      const study = catalog.studies.find(s => s.project_id === chosen);
+      const key = study ? `${study.project_id}:${study.sha256}` : '';
+      const show = () => root.querySelectorAll('[data-header-original]').forEach(item => {
+        const id = item.dataset.headerOriginal;
+        item.textContent = mode === 'batch' ? 'Original: from each selected study' :
+          originalHeaders.has(key) ? `Original: ${originalHeaders.get(key)[id] || '(blank)'}` :
+          study?.ready ? 'Loading original value…' : 'Load a study to see its original value.';
+      });
+      show();
+      if (mode === 'batch' || !headerExpanded || !study?.ready || originalHeaders.has(key) || headerRequests.has(key)) return;
+      headerRequests.add(key);
+      try {
+        const result = await api(`/api/reports/studies/${study.project_id}/headers`);
+        originalHeaders.set(`${study.project_id}:${result.source_sha256}`, result.values);
+        if (active() && chosen === study.project_id && mode !== 'history') show();
+      } catch (error) {
+        if (active() && chosen === study.project_id) root.querySelectorAll('[data-header-original]').forEach(item => { item.textContent = 'Original value unavailable. Keep original still preserves it.'; });
+      } finally { headerRequests.delete(key); }
+    }
+
     function builder() {
       const study = catalog.studies.find(s => s.project_id === chosen);
       const compatible = catalog.templates.filter(t => t.study_types.includes(study?.study_type));
@@ -99,7 +147,15 @@ window.ETAPReports = (() => {
               <div class="report-meta">${esc(selectedTemplate?.family || 'Select a supported study')} ${selectedTemplate ? '· ETAP 24' : ''}</div>`
               : `<div class="report-checks">${uniqueKinds.map(([kind, name]) => `<label><input type="checkbox" data-kind="${esc(kind)}" ${kinds.has(kind) ? 'checked' : ''}><span>${esc(name)}</span></label>`).join('')}</div><p class="report-meta">The matching template family is selected for each study.</p>`}
           </div>
-          <div class="card report-step"><h2><span>3</span> Generate &amp; download</h2>
+          ${catalog.header_fields?.length ? `<div class="card report-step"><h2><span>3</span> Report header</h2>
+            <p class="report-notice">Keep original values, replace text, or hide a label and value.${mode === 'batch' ? ' These settings apply to every report in this batch.' : ''}</p>
+            <details id="report-header-options" ${headerExpanded ? 'open' : ''}><summary id="report-header-summary">Customize header fields</summary>
+              <div class="report-header-fields">${headerFields()}</div>
+              <p class="report-meta">Keep text short to fit the template. Filename changes the printed header; the download name is generated separately.</p>
+              <button type="button" id="report-header-reset" class="report-secondary">Reset all to original</button>
+            </details>
+          </div>` : ''}
+          <div class="card report-step"><h2><span>${catalog.header_fields?.length ? '4' : '3'}</span> Generate &amp; download</h2>
             <p class="report-meta">PDF · original ETAP template formatting</p>
             <label class="report-check"><input type="checkbox" id="report-timestamp" ${includeTimestamp ? 'checked' : ''}> Add UTC timestamp to filename</label>
             <div id="report-count" class="report-meta" aria-live="polite"></div>
@@ -114,6 +170,24 @@ window.ETAPReports = (() => {
       $('#report-timestamp').addEventListener('change', e => { includeTimestamp = e.target.checked; pendingRequest = null; });
       $('#report-open-file')?.addEventListener('click', () => el('#folder-input').click());
       $('#report-generate').addEventListener('click', generate);
+      $('#report-header-options')?.addEventListener('toggle', event => { headerExpanded = event.target.open; if (headerExpanded) loadHeaderValues(); });
+      root.querySelectorAll('[data-header-mode]').forEach(select => select.addEventListener('change', () => {
+        const id = select.dataset.headerMode;
+        const input = root.querySelector(`[data-header-value="${id}"]`);
+        if (select.value === 'original') delete headers[id];
+        else if (select.value === 'hide') headers[id] = null;
+        else {
+          const study = catalog.studies.find(s => s.project_id === chosen);
+          const original = originalHeaders.get(`${chosen}:${study?.sha256}`)?.[id] || '';
+          input.value = input.value || original;
+          headers[id] = input.value;
+        }
+        input.hidden = input.disabled = select.value !== 'custom';
+        saveHeaderDraft();
+      }));
+      root.querySelectorAll('[data-header-value]').forEach(input => input.addEventListener('input', () => { headers[input.dataset.headerValue] = input.value; saveHeaderDraft(); }));
+      $('#report-header-reset')?.addEventListener('click', () => { headers = {}; saveHeaderDraft(); builder(); });
+      saveHeaderDraft(); loadHeaderValues();
       summary();
     }
 
@@ -122,7 +196,7 @@ window.ETAPReports = (() => {
       if (busy || !pairs.length || pairs.length > 24) return;
       busy = true; summary();
       // Reuse this ID after a lost response; a retry must not duplicate a batch.
-      pendingRequest ||= {request_id: requestId(), jobs: pairs, timestamp: includeTimestamp};
+      pendingRequest ||= {request_id: requestId(), jobs: pairs, timestamp: includeTimestamp, headers: {...headers}};
       try {
         const result = await post('/api/reports/jobs', pendingRequest);
         pendingRequest = null;
@@ -178,16 +252,23 @@ window.ETAPReports = (() => {
         <article class="report-job"><div class="report-job-heading"><strong>${esc(job.template_name)}</strong><span class="report-state report-state-${esc(job.status)}">${esc(job.status === 'ready' ? 'Ready' : job.status === 'generating' ? 'Generating' : job.status === 'queued' ? 'Queued' : 'Failed')}</span></div>
           <div class="report-file">${esc(job.filename)}</div><div class="report-meta">${esc(job.study_name)} · ${esc(date(job.created_at))}</div>
           <p class="report-job-message">${esc(job.message)}</p>
-          <div class="report-job-actions">${job.status === 'ready' ? `<button class="report-secondary" data-preview="${job.id}">Preview</button><button class="report-secondary" data-download="${job.id}">Download PDF</button>` : job.status === 'failed' ? `<button class="report-secondary" data-retry="${job.id}">Retry report</button>` : ''}</div>
+          <div class="report-job-actions">${job.status === 'ready' ? `<button class="report-secondary" data-preview="${job.id}">Preview</button><button class="report-secondary" data-download="${job.id}">Download PDF</button><button class="report-secondary" data-edit-headers="${job.id}">Edit headers</button>` : job.status === 'failed' ? `<button class="report-secondary" data-retry="${job.id}">Retry report</button>` : ''}</div>
+          ${Object.keys(job.headers || {}).length ? `<details class="report-audit"><summary>Header changes (${Object.keys(job.headers).length})</summary><dl>${Object.entries(job.headers).map(([key, value]) => `<dt>${esc(catalog.header_fields?.find(f => f.id === key)?.label || key)}</dt><dd>${value === null ? 'Hidden (label and value)' : esc(value || '(blank)')}</dd>`).join('')}</dl></details>` : ''}
           <details class="report-audit"><summary>Report details</summary><dl><dt>Report ID</dt><dd>${esc(job.id)}</dd><dt>Source SHA-256</dt><dd>${esc(job.source_sha256)}</dd><dt>Template SHA-256</dt><dd>${esc(job.template_sha256)}</dd>${job.pdf_sha256 ? `<dt>PDF SHA-256</dt><dd>${esc(job.pdf_sha256)}</dd>` : ''}</dl></details>
         </article>`).join('') : '<div class="report-empty"><h2>No reports yet</h2><p>Select a study and template to generate your first PDF.</p></div>';
       root.querySelectorAll('[data-preview]').forEach(b => b.addEventListener('click', () => preview(jobs.find(j => j.id === b.dataset.preview))));
       root.querySelectorAll('[data-download]').forEach(b => b.addEventListener('click', () => download(jobs.find(j => j.id === b.dataset.download))));
+      root.querySelectorAll('[data-edit-headers]').forEach(b => b.addEventListener('click', () => {
+        const job = jobs.find(j => j.id === b.dataset.editHeaders);
+        chosen = job.project_id; templateId = job.template_id; includeTimestamp = job.timestamp;
+        headers = {...(job.headers || {})}; headerExpanded = true; saveHeaderDraft();
+        mode = 'single'; renderMode(); message('Edit the header settings, then generate a new PDF.');
+      }));
       root.querySelectorAll('[data-retry]').forEach(b => b.addEventListener('click', async () => {
         const job = jobs.find(j => j.id === b.dataset.retry);
         b.disabled = true;
         try {
-          const result = await post('/api/reports/jobs', {request_id: b.dataset.requestId ||= requestId(), timestamp: job.timestamp,
+          const result = await post('/api/reports/jobs', {request_id: b.dataset.requestId ||= requestId(), timestamp: job.timestamp, headers: job.headers || {},
             jobs: [{project_id: job.project_id, template_id: job.template_id, source_sha256: job.source_sha256}]});
           if (!active()) return;
           jobs.unshift(...result.jobs); history(); message('Report queued again.');

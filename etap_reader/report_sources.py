@@ -8,6 +8,7 @@ import sqlite3
 import tempfile
 import time
 import uuid
+from . import report_headers
 
 STUDIES = {1: "Device Duty", 3: "ANSI Half-Cycle / Momentary",
            4: "ANSI 1.5–4 Cycle", 5: "ANSI 30-Cycle / Minimum Fault"}
@@ -52,6 +53,7 @@ def preserve(path, session, objects):
             if len(types) != 1:
                 raise ValueError("The study contains ambiguous StudyType values.")
             study_type = types.pop()
+            headers = report_headers.read_values(conn)
         finally:
             conn.close()
         digest = sha256(copy)
@@ -59,4 +61,4 @@ def preserve(path, session, objects):
         objects.upload_from(copy, key)
     return {"key": key, "sha256": digest, "study_type": study_type,
             "study_name": STUDIES.get(study_type, f"Study type {study_type}"),
-            "table_count": len(tables), "tables": tables, "bytes": before.st_size}
+            "table_count": len(tables), "tables": tables, "bytes": before.st_size, "headers": headers}

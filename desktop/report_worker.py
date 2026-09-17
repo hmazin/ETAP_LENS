@@ -45,7 +45,9 @@ class Worker:
         self.timeout = args.timeout
         self.worker_id = hashlib.sha256(socket.gethostname().encode()).hexdigest()[:24]
         self.catalog = json.loads((ROOT.parent / "etap_reader" / "report_catalog.json").read_text(encoding="utf-8"))
-        subprocess.run([str(self.exe), "--probe"], check=True, timeout=45, capture_output=True)
+        probe = subprocess.run([str(self.exe), "--probe"], check=True, timeout=45, capture_output=True)
+        if json.loads(probe.stdout).get("header_version", 0) < 1:
+            raise RuntimeError("Rebuild the native report worker to enable report header settings.")
 
     def inventory(self):
         available = {}
@@ -127,6 +129,7 @@ class Worker:
                            "template_path": template["path"], "template_name": template["name"],
                            "template_sha256": job["template_hashes"]["sha256"],
                            "options_sha256": job["template_hashes"].get("options_sha256", ""),
+                           "headers": job.get("headers", {}),
                            "log_directory": str(self.logs), "work_directory": str(work), "output_path": str(pdf)}
                 request_path = work / "request.json"
                 request_path.write_text(json.dumps(request), encoding="utf-8")
@@ -166,7 +169,7 @@ class Worker:
     def run(self, once=False):
         while True:
             try:
-                result = self.json("claim", {"worker_id": self.worker_id, "templates": self.inventory()})
+                result = self.json("claim", {"worker_id": self.worker_id, "templates": self.inventory(), "header_version": 1})
                 if result.get("job"):
                     self.render(result["job"])
                 elif not once:

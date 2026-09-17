@@ -16,7 +16,11 @@ namespace EtapCrystalReporter.Services
         public CrystalReportService(CrystalRuntime runtime, Logger log) { this.runtime = runtime; this.log = log; }
 
         public IReportSession Prepare(DatabaseSnapshot database, ReportTemplate template)
+        { return Prepare(database, template, null); }
+
+        public IReportSession Prepare(DatabaseSnapshot database, ReportTemplate template, IDictionary<string, string> headers)
         {
+            ReportHeaders.Validate(headers);
             if (Thread.CurrentThread.GetApartmentState() != ApartmentState.STA)
                 throw new InvalidOperationException("Crystal Reports must run on an STA thread.");
             TemplateCatalog.ValidateStudy(template, database.Info);
@@ -27,9 +31,13 @@ namespace EtapCrystalReporter.Services
                 document.Load(template.Path, runtime.EnumValue("OpenReportMethod", "OpenReportByTempCopy"));
                 document.ReportOptions.EnableSaveDataWithReport = false;
                 // Bind every main/subreport table. Never refresh against the template's original connection.
-                int bound = Bind(document, "", database, template, data);
+                int bound = Bind(document, "", database, template, data, headers);
+                ReportHeaders.ApplyPresentation(document, "", database, template, headers);
                 foreach (dynamic subreport in document.Subreports)
-                    bound += Bind(subreport, (string)subreport.Name, database, template, data);
+                {
+                    bound += Bind(subreport, (string)subreport.Name, database, template, data, headers);
+                    ReportHeaders.ApplyPresentation(subreport, (string)subreport.Name, database, template, headers);
+                }
                 if (bound == 0) throw new InvalidDataException("The template has no database tables; it cannot be verified against the selected study.");
                 ApplyParameters(document, template);
                 log.Write("report.bound", new { source = database.Info.SourcePath, sourceSha256 = database.Info.SourceSha256,
@@ -43,7 +51,7 @@ namespace EtapCrystalReporter.Services
             }
         }
 
-        private int Bind(dynamic report, string scope, DatabaseSnapshot database, ReportTemplate template, List<DataTable> retained)
+        private int Bind(dynamic report, string scope, DatabaseSnapshot database, ReportTemplate template, List<DataTable> retained, IDictionary<string, string> headers)
         {
             int count = 0;
             foreach (dynamic table in report.Database.Tables)
@@ -56,6 +64,7 @@ namespace EtapCrystalReporter.Services
                 if (fields.Count == 0) throw new InvalidDataException("Crystal table '" + alias + "' has no fields.");
                 using (DataTable source = database.ReadTable(actual))
                 {
+                    ReportHeaders.ApplyToTable(source, headers);
                     DataTable shaped = TableBinding.Shape(source, alias, fields);
                     retained.Add(shaped);
                     table.SetDataSource(shaped);

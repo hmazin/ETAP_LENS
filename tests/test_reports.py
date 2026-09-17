@@ -35,6 +35,8 @@ class ReportFlow(unittest.TestCase):
             db.execute("INSERT INTO ISCStudyCase VALUES (1)")
             db.execute("CREATE TABLE IBus (Name TEXT, Fault REAL)")
             db.executemany("INSERT INTO IBus VALUES (?, ?)", [("Bus A", 1.234), (None, None)])
+            db.execute("CREATE TABLE Headr (SN TEXT, Date TEXT, Project TEXT, PSRev TEXT)")
+            db.execute("INSERT INTO Headr VALUES ('Original SN', 'Original date', 'Original project', '24.0')")
         db.close()
         self.retained = report_sources.preserve(self.source, SID, self.objects)
         self.manifest = {"project_id": PID, "session_id": SID, "display_name": "renamed.SA2S",
@@ -56,7 +58,7 @@ class ReportFlow(unittest.TestCase):
         self.headers = {"X-Session-Id": SID}
         self.worker_headers = {"Authorization": "Bearer " + TOKEN}
         self.inventory = {t["id"]: {"sha256": "d" * 64, "options_sha256": ""} for t in CATALOG}
-        self.service.worker_seen("test-worker", self.inventory)
+        self.service.worker_seen("test-worker", self.inventory, header_version=1)
 
     def create(self, **changes):
         data = {"request_id": uuid.uuid4().hex, "jobs": [{"project_id": PID, "template_id": "duty-summary", "source_sha256": self.retained["sha256"]}]}
@@ -66,7 +68,7 @@ class ReportFlow(unittest.TestCase):
 
     def claim(self):
         response = self.client.post("/api/report-worker/claim", headers=self.worker_headers,
-                                    json={"worker_id": "test-worker", "templates": self.inventory})
+                                    json={"worker_id": "test-worker", "templates": self.inventory, "header_version": 1})
         self.assertEqual(response.status_code, 200, response.json)
         return response.json["job"]
 
@@ -215,6 +217,49 @@ class ReportFlow(unittest.TestCase):
         for invalid in (None, [], [{}], [{"project_id": "../outside", "template_id": "duty-summary"}]):
             self.assertEqual(self.create(jobs=invalid)[0].status_code, 400)
         self.assertEqual(self.service.jobs(SID), [])
+
+    def test_original_headers_are_private_and_older_uploads_are_supported(self):
+        url = f"/api/reports/studies/{PID}/headers"
+        for legacy in (False, True):
+            if legacy:
+                self.retained.pop("headers")
+            response = self.client.get(url, headers=self.headers)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json['values']['project'], 'Original project')
+            self.assertEqual(response.json['values']['sn'], 'Original SN')
+            self.assertEqual(response.json['source_sha256'], self.retained['sha256'])
+        self.assertEqual(self.client.get(url, headers={'X-Session-Id': OTHER}).status_code, 404)
+        self.assertEqual(self.client.get('/api/reports/studies/invalid/headers', headers=self.headers).status_code, 404)
+
+    def test_header_changes_survive_jobs_and_claims_without_changing_original(self):
+        headers = {'sn': None, 'date': '17 Sep 2026', 'revision': 'A', 'project': 'Test <Project> & Team', 'filename': ''}
+        before = Path(self.source).read_bytes()
+        response, data = self.create(headers=headers)
+        self.assertEqual(response.status_code, 202, response.json)
+        self.assertEqual(response.json['jobs'][0]['headers'], headers)
+        self.assertEqual(self.client.post('/api/reports/jobs', json=data, headers=self.headers).json, response.json)
+        data['headers']['revision'] = 'B'
+        self.assertEqual(self.client.post('/api/reports/jobs', json=data, headers=self.headers).status_code, 409)
+        claimed = self.claim()
+        self.assertEqual(claimed['headers']['revision'], 'A')
+        self.assertIsNone(claimed['headers']['sn'])
+        self.assertEqual(Path(self.source).read_bytes(), before)
+        self.assertEqual(self.retained['headers']['project'], 'Original project')
+
+    def test_invalid_header_input_is_rejected_before_job_creation(self):
+        for headers in (None, [], {'unknown': 'x'}, {'sn': True}, {'project': 10}, {'date': 'a\nb'},
+                        {'revision': 'x' * 33}, {'project': '\x00'}, {'project': '\ud800'}):
+            response, _ = self.create(headers=headers)
+            self.assertEqual(response.status_code, 400, headers)
+        self.assertEqual(self.service.jobs(SID), [])
+
+    def test_old_workers_cannot_silently_ignore_custom_headers(self):
+        self.service.worker_seen('test-worker', self.inventory, header_version=0)
+        self.assertEqual(self.create(headers={'sn': None})[0].status_code, 503)
+        self.service.worker_seen('new-worker', self.inventory, header_version=1)
+        self.assertEqual(self.create(headers={'sn': None})[0].status_code, 202)
+        self.assertIsNone(self.service.claim('old-worker', self.inventory))
+        self.assertIsNotNone(self.service.claim('new-worker', self.inventory, header_version=1))
 
 
 if __name__ == "__main__":

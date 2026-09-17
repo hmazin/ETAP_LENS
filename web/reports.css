@@ -37,6 +37,14 @@
 .report-checks small { display: block; font-size: 12px; color: var(--text-dim); margin-top: 3px; }
 .report-check input, .report-checks input { flex: 0 0 auto; margin: 3px 0 0; accent-color: var(--accent); }
 #report-generate { margin-top: 14px; }
+#report-header-options > summary { color: var(--accent); cursor: pointer; font-size: 13px; padding: 5px 0; }
+.report-header-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin: 18px 0; }
+.report-header-field { display: grid; grid-template-columns: minmax(0, 1fr); gap: 7px; }
+.report-header-field label { margin: 0 !important; font-weight: 600; }
+.report-header-field input { width: 100%; min-width: 0; box-sizing: border-box; padding: 10px; border: 1px solid var(--border); border-radius: 5px; background: var(--panel); color: var(--text); font: inherit; font-size: 13px; }
+.report-header-original { color: var(--text-dim); overflow-wrap: anywhere; font-size: 12px; line-height: 1.5; margin: 0; }
+#report-header-reset { margin-top: 12px; }
+@media (max-width: 600px) { .report-header-fields { grid-template-columns: minmax(0, 1fr); } .report-header-field input { font-size: 16px; } }
 .report-preview { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; min-width: 0; overflow: hidden; }
 .report-preview-head { padding: 16px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; border-bottom: 1px solid var(--border); }
 .report-preview-head h2, .report-history-head h2 { font-size: 15px; margin: 0; }

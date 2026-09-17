@@ -7,7 +7,7 @@ import re
 import time
 import uuid
 
-from . import project_cache, report_sources
+from . import project_cache, report_sources, report_headers
 
 with open(os.path.join(os.path.dirname(__file__), "report_catalog.json"), encoding="utf-8") as stream:
     CATALOG = json.load(stream)
@@ -34,11 +34,11 @@ class ReportService:
         self.objects = objects
         self.records = records
 
-    def availability(self):
+    def availability(self, require_headers=False):
         templates = {}
         for key in self.records.keys("workers/"):
             worker, _ = self.records.read(key)
-            if worker.get("seen", 0) > time.time() - 90:
+            if worker.get("seen", 0) > time.time() - 90 and (not require_headers or worker.get("header_version", 0) >= 1):
                 templates.update(worker.get("templates", {}))
         return templates
 
@@ -87,6 +87,10 @@ class ReportService:
             raise ReportError("Select between 1 and 24 reports per batch.")
         if not isinstance(body.get("timestamp", False), bool):
             raise ReportError("timestamp must be true or false.")
+        try:
+            headers = report_headers.validate(body.get("headers", {}))
+        except ValueError as error:
+            raise ReportError(str(error)) from error
         fingerprint = hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()
         # An idempotent retry must succeed even if the worker has since gone offline.
         previous, _ = self.records.read("sessions/" + session)
@@ -95,8 +99,10 @@ class ReportService:
             if existing[0]["_request_hash"] != fingerprint:
                 raise ReportError("This request id has already been used for a different batch.", 409)
             return [public_job(j) for j in existing]
-        available = self.availability()
+        available = self.availability(require_headers=bool(headers))
         if not available:
+            if headers and self.availability():
+                raise ReportError("The reporting worker needs an update before it can customize headers.", 503)
             raise ReportError("The reporting service is offline. Please try again when it reconnects.", 503)
         prepared = []
         seen = set()
@@ -130,6 +136,7 @@ class ReportService:
                              "source_sha256": source["sha256"], "template_sha256": available[tid]["sha256"],
                              "created_at": time.time(), "status": "queued", "message": "Waiting for the reporting service.",
                              "attempts": 0, "timestamp": body.get("timestamp", False),
+                             "headers": headers,
                              "_source": source, "_template": available[tid],
                              "_request": request_id, "_request_hash": fingerprint})
 
@@ -146,25 +153,29 @@ class ReportService:
             return [public_job(j) for j in prepared]
         return self.records.update("sessions/" + session, save)
 
-    def worker_seen(self, worker_id, inventory):
+    def worker_seen(self, worker_id, inventory, header_version=0):
         if not isinstance(worker_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", worker_id):
             raise ReportError("Invalid worker id.")
         if not isinstance(inventory, dict) or len(inventory) > len(CATALOG):
             raise ReportError("Invalid template inventory.")
+        if type(header_version) is not int or header_version not in (0, 1):
+            raise ReportError("Invalid worker header version.")
         for tid, item in inventory.items():
             if tid not in TEMPLATES or not isinstance(item, dict) or not HASH.fullmatch(str(item.get("sha256", ""))):
                 raise ReportError("Invalid template inventory.")
             if item.get("options_sha256") and not HASH.fullmatch(str(item["options_sha256"])):
                 raise ReportError("Invalid template options hash.")
-        self.records.update("workers/" + worker_id, lambda state: state.update(seen=time.time(), templates=inventory))
+        self.records.update("workers/" + worker_id, lambda state: state.update(seen=time.time(), templates=inventory, header_version=header_version))
 
-    def claim(self, worker_id, inventory):
-        self.worker_seen(worker_id, inventory)
+    def claim(self, worker_id, inventory, header_version=0):
+        self.worker_seen(worker_id, inventory, header_version)
         for key in self.records.keys("sessions/"):
             def take(state):
                 self._expire(state)
                 for job in state["jobs"]:
                     if job["status"] != "queued" or inventory.get(job["template_id"]) != job["_template"]:
+                        continue
+                    if job.get("headers") and header_version < 1:
                         continue
                     job.update(status="generating", message="Generating PDF from the original ETAP template.",
                                attempts=job["attempts"] + 1, _lease=uuid.uuid4().hex,

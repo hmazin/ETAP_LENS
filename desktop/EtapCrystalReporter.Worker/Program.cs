@@ -21,7 +21,7 @@ namespace EtapCrystalReporter.Worker
                 runtime.CheckExecution();
                 if (args.Length == 1 && args[0] == "--probe")
                 {
-                    Console.WriteLine(json.Serialize(new { ok = true, runtime = runtime.Version, bitness = IntPtr.Size * 8 }));
+                    Console.WriteLine(json.Serialize(new { ok = true, runtime = runtime.Version, bitness = IntPtr.Size * 8, header_version = 1 }));
                     return 0;
                 }
                 if (args.Length != 1) throw new ArgumentException("Pass a report request JSON file or --probe.");
@@ -39,7 +39,9 @@ namespace EtapCrystalReporter.Worker
                     if (database.Info.SourceSha256 != text("source_sha256")) throw new InvalidDataException("Original study checksum does not match.");
                     if (database.Info.StudyType != Convert.ToInt32(request["study_type"])) throw new InvalidDataException("The detected study type does not match the job.");
                     var template = TemplateCatalog.Load(templatePath, text("template_name"));
-                    using (var report = new CrystalReportService(runtime, log).Prepare(database, template))
+                    var headers = request.ContainsKey("headers")
+                        ? json.ConvertToType<Dictionary<string, string>>(request["headers"]) : null;
+                    using (var report = new CrystalReportService(runtime, log).Prepare(database, template, headers))
                         report.ExportPdf(text("output_path"));
                 }
                 using (var stream = File.OpenRead(text("output_path")))

@@ -78,6 +78,25 @@ offline status when heartbeats stop.
 
 ## Job behavior and data boundaries
 
+### Custom report headers
+
+In Reports, expand **Report header → Customize header fields**. Each field can
+keep its original value, use custom text (including an empty value), or hide its
+label and value. This includes SN, Date, Revision, Project, Location, Contract,
+Engineer, Filename, Study Case, Configuration, and the two title lines. Keep
+custom text short enough for the existing template's header boxes. Filename
+changes the printed header, not the generated download name.
+
+Settings apply to every selected report in a batch. Completed jobs retain their
+header choices; **Edit headers** opens those choices to generate a new PDF, and
+retrying a failed job preserves them. **Reset all to original** clears overrides.
+
+Named header text is changed only in the temporary Crystal report objects.
+The two title lines use temporary in-memory header data. Uploaded files and
+licensed `.rpt` templates are never changed, and Revision/Configuration edits do
+not alter study-case data or the ETAP version shown by the template. Workers
+advertise header support; older workers cannot claim customized jobs.
+
 - Jobs belong to the browser's existing anonymous bearer session. This is not a
   user account; clearing site data loses access. No client data or templates go
   into the public Git repository.
