@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ETAP Lens</title>
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="reports.css">
 </head>
 <!-- config-pending hides every filesystem-backed control until /api/config
      says this instance has a filesystem to browse. Removing them after the
@@ -41,6 +42,11 @@
 
       <div id="recent-projects"></div>
       <button id="clear-all-btn" class="hidden">Unload all</button>
+
+      <nav class="workspace-menu" aria-label="Workspace">
+        <button id="workspace-studies" class="menu-item">Studies</button>
+        <button id="workspace-reports" class="menu-item" data-view="reports">Reports</button>
+      </nav>
 
       <nav id="menu" class="hidden">
         <button id="back-to-board" class="menu-item back-item">&#8592; All modules</button>
@@ -97,5 +103,6 @@
 
   <script src="config.js"></script>
   <script src="app.js"></script>
+  <script src="reports.js"></script>
 </body>
 </html>

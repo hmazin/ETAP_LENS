@@ -1,0 +1,17 @@
+[
+  {"id":"duty-summary","kind":"summary","name":"Summary","family":"ANSI 3-Phase SC","study_types":[1],"path":"ANSI 3-Phase SC/Summary/Summary.rpt"},
+  {"id":"duty-complete","kind":"complete","name":"Complete","family":"ANSI 3-Phase SC","study_types":[1],"path":"ANSI 3-Phase SC/Complete/Complete.rpt"},
+  {"id":"duty-momentary-complete","kind":"momentary-complete","name":"Momentary Duty — Complete","family":"ANSI 3-Phase SC","study_types":[1],"path":"ANSI 3-Phase SC/Summary/Momentary Duty-Complete.rpt"},
+  {"id":"duty-momentary-exceeded","kind":"momentary-exceeded","name":"Momentary Duty — Exceeded","family":"ANSI 3-Phase SC","study_types":[1],"path":"ANSI 3-Phase SC/Summary/Momentary Duty-Exceeded.rpt"},
+  {"id":"duty-momentary-marginal","kind":"momentary-marginal","name":"Momentary Duty — Marginal","family":"ANSI 3-Phase SC","study_types":[1],"path":"ANSI 3-Phase SC/Summary/Momentary Duty-Marginal.rpt"},
+  {"id":"duty-momentary-mva","kind":"momentary-mva","name":"Momentary Duty — MVA","family":"ANSI 3-Phase SC","study_types":[1],"path":"ANSI 3-Phase SC/Summary/Momentary Duty-MVA.rpt"},
+  {"id":"duty-interrupting-complete","kind":"interrupting-complete","name":"Interrupting Duty — Complete","family":"ANSI 3-Phase SC","study_types":[1],"path":"ANSI 3-Phase SC/Summary/Interrupting Duty-Complete.rpt"},
+  {"id":"duty-interrupting-exceeded","kind":"interrupting-exceeded","name":"Interrupting Duty — Exceeded","family":"ANSI 3-Phase SC","study_types":[1],"path":"ANSI 3-Phase SC/Summary/Interrupting Duty-Exceeded.rpt"},
+  {"id":"duty-interrupting-marginal","kind":"interrupting-marginal","name":"Interrupting Duty — Marginal","family":"ANSI 3-Phase SC","study_types":[1],"path":"ANSI 3-Phase SC/Summary/Interrupting Duty-Marginal.rpt"},
+  {"id":"duty-interrupting-mva","kind":"interrupting-mva","name":"Interrupting Duty — MVA","family":"ANSI 3-Phase SC","study_types":[1],"path":"ANSI 3-Phase SC/Summary/Interrupting Duty-MVA.rpt"},
+  {"id":"fault-summary","kind":"summary","name":"Summary","family":"ANSI Unbalanced SC","study_types":[3,4,5],"path":"ANSI Unbalanced SC/Summary/Summary.rpt"},
+  {"id":"fault-complete","kind":"complete","name":"Complete","family":"ANSI Unbalanced SC","study_types":[3,4,5],"path":"ANSI Unbalanced SC/Complete/Complete.rpt"},
+  {"id":"fault-lg","kind":"lg","name":"Line-to-Ground — Complete","family":"ANSI Unbalanced SC","study_types":[3,4,5],"path":"ANSI Unbalanced SC/Complete/Complete LG.rpt"},
+  {"id":"fault-ll","kind":"ll","name":"Line-to-Line — Complete","family":"ANSI Unbalanced SC","study_types":[3,4,5],"path":"ANSI Unbalanced SC/Complete/Complete LL.rpt"},
+  {"id":"fault-llg","kind":"llg","name":"Line-to-Line-to-Ground — Complete","family":"ANSI Unbalanced SC","study_types":[3,4,5],"path":"ANSI Unbalanced SC/Complete/Complete LLG.rpt"}
+]

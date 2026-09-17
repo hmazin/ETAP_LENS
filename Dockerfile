@@ -43,7 +43,8 @@ COPY deploy/entrypoint.sh /usr/local/bin/entrypoint.sh
 
 # The app writes derived caches under /app/cache and hands the engine database
 # files to attach, so both run as the same user and that user owns the tree.
-RUN chmod +x /usr/local/bin/entrypoint.sh \
+RUN sed -i 's/\r$//' /usr/local/bin/entrypoint.sh \
+ && chmod +x /usr/local/bin/entrypoint.sh \
  && mkdir -p /app/cache \
  && chown -R 10001:0 /app \
  && chmod -R g+rwX /app

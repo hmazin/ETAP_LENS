@@ -214,6 +214,12 @@ class GcsStorage:
         )
         return {"url": url, "method": "PUT", "headers": headers, "backend": "gcs"}
 
+    def signed_download_url(self, key, expires=900, disposition=None):
+        import datetime
+        return self._blob(key).generate_signed_url(
+            version="v4", expiration=datetime.timedelta(seconds=expires),
+            method="GET", response_disposition=disposition, **self._signing_kwargs())
+
 
 def build(bucket_name: str = "", local_root: str = ""):
     """GCS when a bucket is configured, otherwise a local directory."""

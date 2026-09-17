@@ -678,6 +678,7 @@ async function showOverview() {
         <div class="page-desc">${m.db_name} &middot; loaded from ${m.db_kind.toUpperCase()} &middot; ${m.stats.tables} tables, ${m.stats.rows_total.toLocaleString()} total rows</div>
       </div>
       ${violationsBoxHtml(data.violations)}
+      ${['sc_duty', 'sc_fault'].includes(categorySet) ? '<button id="study-generate-report" class="report-primary">Generate report</button>' : ''}
     </div>
     ${m.stats.lite_cache ? `<div class="truncation-note">Summary tables only. The per-step
       detail ETAP produced (one row per branch per time step) was discarded after the
@@ -698,6 +699,7 @@ async function showOverview() {
   `;
 
   setCrumbs('Overview');
+  el('#study-generate-report')?.addEventListener('click', () => window.ETAPReports.open(currentProjectId));
   const grid = el('#stat-grid');
   data.equipment_counts.forEach(c => {
     const card = document.createElement('div');
@@ -1072,6 +1074,7 @@ function boardTileHtml(m, isEmpty) {
 function showBoard(board, hasFolder = null) {
   currentBoard = board;
   currentProjectId = null;
+  currentManifest = null;
   el('#menu').classList.add('hidden');
   setActiveMenu(null);
   setCrumbs(null);   // the board is the top of the trail
@@ -1094,12 +1097,18 @@ function showBoard(board, hasFolder = null) {
       <button id="board-change-btn" class="board-change">
         ${isEmpty ? 'Open project folder' : 'Open another folder'}</button>
     </div>
-    <div class="board">${board.modules.map(m => boardTileHtml(m, isEmpty)).join('')}</div>
+    ${isEmpty ? `<div class="study-start"><h2>Explore a study. Generate its report.</h2>
+      <p>Open your ETAP project folder to find its studies, or select a result file directly.</p>
+      <button id="board-single-file" class="report-secondary">Open study file</button>
+      <p class="study-start-note">Short circuit · Load flow · Time domain · Harmonics · Ground grid</p>
+      <p class="study-start-note">Your original files are never modified.</p></div>`
+      : `<div class="board">${board.modules.map(m => boardTileHtml(m, false)).join('')}</div>`}
     ${isEmpty ? '' : `<div class="board-note">Nothing is read until you open a study.
        Opening one analyzes that file only.</div>`}
   `;
 
   el('#board-change-btn').addEventListener('click', openProjectFolder);
+  el('#board-single-file')?.addEventListener('click', () => el('#folder-input').click());
   content().querySelectorAll('.tile-file').forEach(btn => {
     btn.addEventListener('click', () => openBoardFile(btn.dataset.module, btn.dataset.file, btn));
   });
@@ -1792,6 +1801,8 @@ async function applyDeployMode() {
 }
 
 el('#open-folder-btn').addEventListener('click', openProjectFolder);
+el('#workspace-reports').addEventListener('click', () => window.ETAPReports.open(currentProjectId));
+el('#workspace-studies').addEventListener('click', () => currentBoard ? showBoard(currentBoard) : showEmptyBoard());
 
 // The way out of a study, in the sidebar as well as the breadcrumb. Leaving
 // one used to mean unloading it, which is a destructive answer to "show me

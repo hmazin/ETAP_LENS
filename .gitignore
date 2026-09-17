@@ -13,3 +13,17 @@ cache/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Windows Crystal Reports companion (client data and vendor binaries stay local)
+.tools/
+/output/
+desktop/**/bin/
+desktop/**/obj/
+desktop/.packages/
+desktop/**/Logs/
+desktop/**/Templates/**/*.rpt
+desktop/**/Templates/**/*.rpt.json
+*.SA1S
+*.SA2S
+*.sa1s
+*.sa2s

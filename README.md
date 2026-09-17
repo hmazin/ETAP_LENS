@@ -4,11 +4,22 @@
 
 # ETAP Lens
 
+The website includes a **Reports** workspace for native ETAP Crystal PDFs,
+batch jobs and PDF preview. See [reporting setup](docs/REPORTING.md) for the
+Windows worker and Cloud Run configuration.
+
 **Browse ETAP project models and study results in your browser — no ETAP license required.**
 
 ETAP Lens is a local web app for power systems engineers to explore ETAP project data (buses, cables, transformers, generators, loads, protective devices) and study results (short circuit, load flow) without needing ETAP itself installed. Point it at a project folder, pick a file, and get a searchable, filterable, exportable view of everything inside it.
 
 > **Unofficial / independent project.** ETAP Lens is not affiliated with, endorsed by, or associated with ETAP® or Operation Technology, Inc. "ETAP" is a trademark of its respective owner; it's referenced here only to describe compatibility with ETAP's file formats.
+
+## Crystal Reports desktop companion
+
+For Windows reporting with the original ETAP Crystal Reports templates, see the
+[Crystal Report Generator companion](desktop/README.md). It reads `.SA1S`/`.SA2S`
+files, previews reports in SAP's native viewer, and exports PDFs individually or
+in batches. The companion has separate Windows/.NET/Crystal runtime requirements.
 
 ## Why this exists
 

@@ -17,6 +17,10 @@ substitutions:
   _RUNTIME_SA: etap-lens-api@etap-lens.iam.gserviceaccount.com
 
 steps:
+  - id: cache
+    name: gcr.io/cloud-builders/docker
+    args: [pull, '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:latest']
+    allowFailure: true
   # Tagged with $BUILD_ID rather than $COMMIT_SHA: the latter is only
   # populated for trigger-based builds, so a manual `gcloud builds submit`
   # produces an empty tag and docker exits 125 on the malformed argument.
@@ -25,6 +29,8 @@ steps:
     name: gcr.io/cloud-builders/docker
     args:
       - build
+      - --cache-from
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:latest
       - -t
       - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:$BUILD_ID
       - -t
@@ -46,7 +52,7 @@ steps:
       - --image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:$BUILD_ID
       - --region=${_REGION}
       - --platform=managed
-      - --allow-unauthenticated          # public tool; abuse is handled in-app
+      # Preserve the existing service's public-invoker policy.
       - --execution-environment=gen2     # real filesystem for the SQLite cache
       # The SQL Server engine shares this allocation with the app, and the
       # container filesystem is memory-backed - so a model being attached is
@@ -65,11 +71,11 @@ steps:
       # _CORS_ORIGINS is itself a comma-separated list, so with the default
       # gcloud reads its second origin as a variable name and fails with
       # "Bad syntax for dict arg". Semicolon appears in none of these values.
-      - --set-env-vars=^;^ETAP_LENS_MODE=hosted;ETAP_LENS_GCS_BUCKET=${_BUCKET};ETAP_LENS_CORS_ORIGINS=${_CORS_ORIGINS};ETAP_LENS_CORS_ORIGIN_REGEX=${_CORS_ORIGIN_REGEX};ETAP_LENS_MSSQL_HOST=localhost
+      - --update-env-vars=^;^ETAP_LENS_MODE=hosted;ETAP_LENS_GCS_BUCKET=${_BUCKET};ETAP_LENS_CORS_ORIGINS=${_CORS_ORIGINS};ETAP_LENS_CORS_ORIGIN_REGEX=${_CORS_ORIGIN_REGEX};ETAP_LENS_MSSQL_HOST=localhost
       # The engine's SA password. Also read by the entrypoint to start it, so
       # without this secret the container runs study-results-only and the
       # Model tile says so.
-      - --set-secrets=MSSQL_SA_PASSWORD=mssql-sa-password:latest,ETAP_LENS_MSSQL_SA_PASSWORD=mssql-sa-password:latest
+      - --update-secrets=MSSQL_SA_PASSWORD=mssql-sa-password:latest,ETAP_LENS_MSSQL_SA_PASSWORD=mssql-sa-password:latest
       # Turnstile keys are secrets too, attached separately:
       #   gcloud run services update ${_SERVICE} --region ${_REGION} \
       #     --set-secrets=ETAP_LENS_TURNSTILE_SECRET_KEY=turnstile-secret:latest

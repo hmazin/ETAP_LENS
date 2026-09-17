@@ -7,9 +7,10 @@ import hashlib
 import json
 import os
 import shutil
+import sqlite3
 import time
 
-from . import appconfig, locate, mdf_dump, sessions, study_result
+from . import appconfig, locate, mdf_dump, sessions, study_result, report_sources
 
 CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cache")
 
@@ -50,6 +51,29 @@ def _sqlite_path(project_id: str) -> str:
 # --------------------------------------------------------------------------
 
 _remote = None
+_report_storage = None
+
+
+def set_report_storage(objects):
+    global _report_storage
+    _report_storage = objects
+
+
+def _preserve_report_source(manifest):
+    if _report_storage is None:
+        return
+    try:
+        if manifest.get("report_source") and _report_storage.exists(manifest["report_source"]["key"]):
+            return
+        source = report_sources.preserve(manifest["db_path"], manifest["session_id"], _report_storage)
+        if source:
+            manifest["report_source"] = source
+            manifest.pop("report_error", None)
+    except (OSError, ValueError, RuntimeError, sqlite3.Error) as exc:
+        manifest["report_error"] = "The original study could not be retained for reporting. Reload the saved study."
+        # Browsing remains available when a source cannot be used by Crystal.
+        import logging
+        logging.getLogger(__name__).warning("Report source unavailable: %s", exc)
 
 
 def set_remote(storage):
@@ -168,6 +192,7 @@ def _public_manifest(m: dict) -> dict:
     out = dict(m)
     out.pop("session_id", None)
     out.pop("sqlite_path", None)
+    out.pop("report_source", None)
     if out.get("uploaded"):
         # An uploaded file's paths are server scratch space; showing them tells
         # the user nothing and tells everyone else the layout of the container.
@@ -251,6 +276,10 @@ def load_located(located, input_path: str = None, force: bool = False, progress_
     sqlite_path = _sqlite_path(project_id)
     if (not force and existing and existing.get("source_fingerprint") == source_fingerprint
             and ensure_sqlite(existing)):
+        _preserve_report_source(existing)
+        with open(_manifest_path(project_id), "w", encoding="utf-8") as f:
+            json.dump(existing, f, indent=2)
+        _push_remote(existing)
         return existing
 
     if located.kind == "study":
@@ -276,6 +305,7 @@ def load_located(located, input_path: str = None, force: bool = False, progress_
         "loaded_at": time.time(),
         "stats": stats,
     }
+    _preserve_report_source(manifest)
     with open(_manifest_path(project_id), "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
     _push_remote(manifest)

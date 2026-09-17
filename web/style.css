@@ -32,7 +32,7 @@
     --accent-dim: #1c2a45;
     --sidebar-bg: #0b0e14;
     --sidebar-text: #cbd5e1;
-    --sidebar-text-dim: #7280;
+    --sidebar-text-dim: #8a97ac;
     --sidebar-active: #1c2333;
     --danger: #ff6b6b;
     /* Light green on dark text: on a dark page a deep green reads as muddy
@@ -69,7 +69,7 @@ body { margin: 0; font-family: -apple-system, Segoe UI, Roboto, Arial, sans-seri
   padding: 8px 10px; font-size: 13px; font-family: var(--mono);
 }
 #path-input::placeholder { color: #8a97ac; }
-#load-btn, #browse-btn, #fs-browse-btn {
+#load-btn, #browse-btn, #fs-browse-btn, #open-folder-btn {
   background: var(--accent); color: #fff; border: none; border-radius: 6px;
   padding: 9px 10px; font-size: 13px; font-weight: 600; cursor: pointer;
 }

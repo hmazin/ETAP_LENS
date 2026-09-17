@@ -79,6 +79,10 @@ CORS_ORIGIN_REGEX = _env("ETAP_LENS_CORS_ORIGIN_REGEX")
 # what the desktop app wants and what the tests run against.
 GCS_BUCKET = _env("ETAP_LENS_GCS_BUCKET")
 
+# Disabled until an authenticated Windows worker has been configured.
+REPORTS_ENABLED = _env("ETAP_LENS_REPORTS_ENABLED").lower() in ("1", "true", "yes", "on")
+REPORT_WORKER_TOKEN = _env("ETAP_LENS_REPORT_WORKER_TOKEN")
+
 # Sessions only mean something where there is more than one user.
 REQUIRE_SESSION = IS_HOSTED
 

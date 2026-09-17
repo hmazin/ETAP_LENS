@@ -74,6 +74,7 @@ _load_jobs_lock = threading.Lock()
 # otherwise the local cache directory.
 _storage = storage.build(appconfig.GCS_BUCKET,
                          os.path.join(project_cache.CACHE_DIR, "objects"))
+project_cache.set_report_storage(_storage)
 
 # Derived caches are mirrored to object storage only when hosted. Locally the
 # disk outlives the process, so there is nothing to protect against.
@@ -111,6 +112,10 @@ def with_session(view):
             return err
         return view(*args, **kwargs)
     return wrapped
+
+
+from etap_reader import report_routes
+_reports = report_routes.register(app, _storage, current_session, scoped_session)
 
 # Table payloads are sent to the browser whole and paged client-side, which is
 # fine for model tables (the biggest are a few thousand rows) but not for

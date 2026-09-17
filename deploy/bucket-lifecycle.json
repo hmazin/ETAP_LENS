@@ -7,7 +7,11 @@
       },
       {
         "action": { "type": "Delete" },
-        "condition": { "age": 7, "matchesPrefix": ["caches/"] }
+        "condition": { "age": 7, "matchesPrefix": ["caches/", "reports/sources/", "reports/pdfs/"] }
+      },
+      {
+        "action": { "type": "Delete" },
+        "condition": { "age": 8, "matchesPrefix": ["reports/state/"] }
       }
     ]
   }

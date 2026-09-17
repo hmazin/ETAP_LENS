@@ -1,0 +1,3 @@
+*.sh text eol=lf
+# Preserve upstream vendor notices verbatim, including their whitespace.
+web/vendor/** -whitespace
