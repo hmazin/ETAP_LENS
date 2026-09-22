@@ -262,5 +262,43 @@ class ReportFlow(unittest.TestCase):
         self.assertIsNotNone(self.service.claim('new-worker', self.inventory, header_version=1))
 
 
+class UnbalancedLoadFlowSource(unittest.TestCase):
+    """.UL1S has no ISCStudyCase, so its study_type is detected from the
+    presence/non-emptiness of LFSumTotalLF3PH instead. See report_sources.py."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.objects = LocalStorage(os.path.join(self.temp.name, "objects"))
+        self.source = os.path.join(self.temp.name, "study.UL1S")
+
+    def _write(self, with_table=True, with_rows=True):
+        with sqlite3.connect(self.source) as db:
+            if with_table:
+                db.execute("CREATE TABLE LFSumTotalLF3PH (BusID TEXT, MW REAL)")
+                if with_rows:
+                    db.execute("INSERT INTO LFSumTotalLF3PH VALUES ('Bus A', 1.5)")
+            db.execute("CREATE TABLE Headr (SN TEXT, Date TEXT, Project TEXT, PSRev TEXT)")
+            db.execute("INSERT INTO Headr VALUES ('SN', 'Date', 'Project', '24.0')")
+        db.close()
+
+    def test_ul1s_source_is_detected_as_unbalanced_load_flow(self):
+        self._write()
+        retained = report_sources.preserve(self.source, SID, self.objects)
+        self.assertEqual(retained["study_type"], 2)
+        self.assertEqual(retained["study_name"], "Unbalanced Load Flow")
+        self.assertEqual(report_sources.sha256(self.source), retained["sha256"])
+
+    def test_ul1s_without_result_table_is_rejected(self):
+        self._write(with_table=False)
+        with self.assertRaisesRegex(ValueError, "missing its load flow result table"):
+            report_sources.preserve(self.source, SID, self.objects)
+
+    def test_ul1s_with_empty_result_table_is_rejected(self):
+        self._write(with_rows=False)
+        with self.assertRaisesRegex(ValueError, "no load flow results"):
+            report_sources.preserve(self.source, SID, self.objects)
+
+
 if __name__ == "__main__":
     unittest.main()

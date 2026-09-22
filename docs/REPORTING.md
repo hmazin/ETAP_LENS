@@ -15,9 +15,10 @@ Table-level CSV/Excel exports remain separate.
 - Each report runs in a separate STA .NET Framework process with the installed
   Crystal runtime. A crash or timeout cannot poison the next report.
 
-The first catalog covers the supplied ETAP 24 ANSI study types 1, 3, 4 and 5.
-Type 1 uses ANSI 3-Phase SC templates; types 3/4/5 use ANSI Unbalanced SC.
-The catalog has 15 templates. It does not claim support for all ETAP modules or
+The first catalog covers the supplied ETAP 24 ANSI study types 1, 2, 3, 4 and 5.
+Type 1 uses ANSI 3-Phase SC templates; types 3/4/5 use ANSI Unbalanced SC; type 2
+(unbalanced/3-phase load flow, `.UL1S`) uses Unbalanced Load Flow templates.
+The catalog has 23 templates. It does not claim support for all ETAP modules or
 every template in Formats2400. Matching uses database metadata, never filenames.
 Crystal validates every required table and field during binding.
 

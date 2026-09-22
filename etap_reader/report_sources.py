@@ -10,8 +10,14 @@ import time
 import uuid
 from . import report_headers
 
-STUDIES = {1: "Device Duty", 3: "ANSI Half-Cycle / Momentary",
+STUDIES = {1: "Device Duty", 2: "Unbalanced Load Flow", 3: "ANSI Half-Cycle / Momentary",
            4: "ANSI 1.5–4 Cycle", 5: "ANSI 30-Cycle / Minimum Fault"}
+
+# .UL1S has no per-run StudyType column the way ISCStudyCase does for SC - it's
+# a single report family, so this table's presence/row-count stands in for
+# "is this a genuine, non-empty unbalanced load flow result".
+UL1S_STUDY_TYPE = 2
+UL1S_CHECK_TABLE = "LFSumTotalLF3PH"
 
 
 def sha256(path):
@@ -23,10 +29,11 @@ def sha256(path):
 
 
 def preserve(path, session, objects):
-    if Path(path).suffix.lower() not in (".sa1s", ".sa2s"):
+    suffix = Path(path).suffix.lower()
+    if suffix not in (".sa1s", ".sa2s", ".ul1s"):
         return None
-    for suffix in ("-wal", "-journal"):
-        if os.path.exists(path + suffix) and os.path.getsize(path + suffix):
+    for sidecar in ("-wal", "-journal"):
+        if os.path.exists(path + sidecar) and os.path.getsize(path + sidecar):
             raise ValueError("Close the study in ETAP and save it before generating reports.")
     before = os.stat(path)
     with tempfile.TemporaryDirectory(prefix="etap-source-") as directory:
@@ -46,18 +53,26 @@ def preserve(path, session, objects):
             tables = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")]
             if conn.execute("PRAGMA quick_check").fetchone()[0] != "ok":
                 raise ValueError("The study failed its SQLite integrity check.")
-            rows = conn.execute('SELECT DISTINCT StudyType FROM ISCStudyCase LIMIT 3').fetchall()
-            if any(not re.fullmatch(r"[+-]?\d+", str(r[0]).strip()) for r in rows):
-                raise ValueError("The study contains a missing or invalid StudyType.")
-            types = {int(r[0]) for r in rows}
-            if len(types) != 1:
-                raise ValueError("The study contains ambiguous StudyType values.")
-            study_type = types.pop()
+            if suffix == ".ul1s":
+                if UL1S_CHECK_TABLE not in tables:
+                    raise ValueError("The study is missing its load flow result table.")
+                count = conn.execute(f'SELECT COUNT(*) FROM "{UL1S_CHECK_TABLE}"').fetchone()[0]
+                if not count:
+                    raise ValueError("The study contains no load flow results.")
+                study_type = UL1S_STUDY_TYPE
+            else:
+                rows = conn.execute('SELECT DISTINCT StudyType FROM ISCStudyCase LIMIT 3').fetchall()
+                if any(not re.fullmatch(r"[+-]?\d+", str(r[0]).strip()) for r in rows):
+                    raise ValueError("The study contains a missing or invalid StudyType.")
+                types = {int(r[0]) for r in rows}
+                if len(types) != 1:
+                    raise ValueError("The study contains ambiguous StudyType values.")
+                study_type = types.pop()
             headers = report_headers.read_values(conn)
         finally:
             conn.close()
         digest = sha256(copy)
-        key = f"reports/sources/{session}/{uuid.uuid4().hex}{Path(path).suffix.lower()}"
+        key = f"reports/sources/{session}/{uuid.uuid4().hex}{suffix}"
         objects.upload_from(copy, key)
     return {"key": key, "sha256": digest, "study_type": study_type,
             "study_name": STUDIES.get(study_type, f"Study type {study_type}"),

@@ -1,7 +1,7 @@
 # ETAP Crystal Report Generator
 
 A Windows companion to ETAP Lens that populates original ETAP `.rpt` templates
-from `.SA1S` and `.SA2S` result databases. Crystal Reports handles the layout,
+from `.SA1S`, `.SA2S`, and `.UL1S` result databases. Crystal Reports handles the layout,
 formulas, grouping, highlighting, subreports, pagination, and PDF export.
 The same rendering services also power the website's outbound Windows worker.
 See [website reporting setup](../docs/REPORTING.md) for that workflow.
@@ -12,7 +12,7 @@ On the development machine, run `Launch.cmd` in this folder. It starts the
 32-bit build, matching the installed SAP Crystal Reports runtime. If necessary,
 the launcher first runs the build script below.
 
-1. Browse to an ETAP short-circuit result file, or paste its path and click **Inspect**.
+1. Browse to an ETAP result file (short-circuit or unbalanced load flow), or paste its path and click **Inspect**.
 2. Select an applicable `.rpt` template. Use **Template settings** to select an
    existing ETAP Formats folder, or **Browse .rpt** to select an individual file.
 3. Choose the output directory and optional filename timestamp.
@@ -37,6 +37,7 @@ The tested ETAP 24 studies use the following families from `Formats2400`:
 | Internal StudyType | Detected study | Template family |
 | --- | --- | --- |
 | 1 | Device Duty | `ANSI 3-Phase SC` (momentary/interrupting duty summaries and complete report) |
+| 2 | Unbalanced Load Flow | `Unbalanced Load Flow` (summary, complete, bus/branch loading, losses, alerts) |
 | 3 | ANSI Half-Cycle / Momentary | `ANSI Unbalanced SC` (fault-current summary, complete, LG/LL/LLG reports) |
 | 4 | ANSI 1.5-4 Cycle | `ANSI Unbalanced SC` |
 | 5 | ANSI 30-Cycle / Minimum-Fault | `ANSI Unbalanced SC` |
@@ -99,9 +100,11 @@ architecture from SourceGear's package.
 - The SQLite header and `quick_check` must pass. Nonempty WAL or rollback-journal
   sidecars are rejected: close ETAP and supply a completed/checkpointed result.
   The application does not checkpoint or repair the original.
-- Schema enumeration and `ISCStudyCase.StudyType` determine the displayed study;
-  missing, invalid, conflicting, or unknown metadata is reported without guessing
-  from the filename. StudyType 5 keeps the combined 30-cycle/minimum-fault label.
+- Schema enumeration determines the displayed study: `ISCStudyCase.StudyType` for
+  short-circuit results, or the presence of a non-empty `LFSumTotalLF3PH` table for
+  unbalanced load flow; missing, invalid, conflicting, or unknown metadata is
+  reported without guessing from the filename. StudyType 5 keeps the combined
+  30-cycle/minimum-fault label.
 - All rows, including ETAP's report-spacing markers, are preserved. The companion
   does **not** reuse the web importer's spacer removal or derived tables.
 - All main-report and subreport tables are rebound. Required field types are

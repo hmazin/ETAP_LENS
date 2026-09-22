@@ -7,7 +7,7 @@ namespace EtapCrystalReporter.UI
 {
     internal static class Ui
     {
-        internal const string StudyFilter = "ETAP short-circuit results (*.SA1S;*.SA2S)|*.SA1S;*.SA2S";
+        internal const string StudyFilter = "ETAP study results (*.SA1S;*.SA2S;*.UL1S)|*.SA1S;*.SA2S;*.UL1S";
         internal static Button Button(string text, EventHandler click)
         {
             var button = new Button { Text = text, AutoSize = true, MinimumSize = new Size(105, 32), Margin = new Padding(4) };

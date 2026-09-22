@@ -45,7 +45,7 @@ class ReportService:
     def studies(self, session, scope):
         result = []
         for public in project_cache.list_projects(scope):
-            if public.get("category_set") not in ("sc_duty", "sc_fault"):
+            if public.get("category_set") not in ("sc_duty", "sc_fault", "load_flow_unbalanced"):
                 continue
             manifest = project_cache.get_manifest(public["project_id"], scope)
             source = manifest.get("report_source") or {}

@@ -20,6 +20,12 @@ from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parent
 
+# Must match etap_reader/report_sources.py: FileValidator on the .NET side only
+# whitelists these extensions, so the downloaded source needs a real one, not
+# just any accepted placeholder.
+SOURCE_EXTENSION_BY_STUDY_TYPE = {2: ".UL1S"}
+DEFAULT_SOURCE_EXTENSION = ".SA1S"
+
 
 def digest(path):
     value = hashlib.sha256()
@@ -108,7 +114,7 @@ class Worker:
         try:
             with tempfile.TemporaryDirectory(prefix="etap-worker-") as directory:
                 work = Path(directory)
-                source = work / "source.SA1S"
+                source = work / ("source" + SOURCE_EXTENSION_BY_STUDY_TYPE.get(job["study_type"], DEFAULT_SOURCE_EXTENSION))
                 pdf = work / "report.pdf"
                 with self.post("source", lease) as response:
                     if "application/json" in response.headers.get("Content-Type", ""):

@@ -11,8 +11,8 @@ namespace EtapCrystalReporter.Utilities
         public static string CopyStudy(string source, string destination)
         {
             string extension = Path.GetExtension(source);
-            if (!new[] { ".sa1s", ".sa2s" }.Contains(extension, StringComparer.OrdinalIgnoreCase))
-                throw new InvalidDataException("Select an ETAP .SA1S or .SA2S short-circuit result file.");
+            if (!new[] { ".sa1s", ".sa2s", ".ul1s" }.Contains(extension, StringComparer.OrdinalIgnoreCase))
+                throw new InvalidDataException("Select an ETAP .SA1S, .SA2S, or .UL1S result file.");
             // We never open the source with SQLite: even read-only SQLite can touch WAL sidecars.
             using (var input = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read))
             {

@@ -17,7 +17,7 @@ ETAP Lens is a local web app for power systems engineers to explore ETAP project
 ## Crystal Reports desktop companion
 
 For Windows reporting with the original ETAP Crystal Reports templates, see the
-[Crystal Report Generator companion](desktop/README.md). It reads `.SA1S`/`.SA2S`
+[Crystal Report Generator companion](desktop/README.md). It reads `.SA1S`/`.SA2S`/`.UL1S`
 files, previews reports in SAP's native viewer, and exports PDFs individually or
 in batches. The companion has separate Windows/.NET/Crystal runtime requirements.
 

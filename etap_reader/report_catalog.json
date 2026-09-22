@@ -13,5 +13,13 @@
   {"id":"fault-complete","kind":"complete","name":"Complete","family":"ANSI Unbalanced SC","study_types":[3,4,5],"path":"ANSI Unbalanced SC/Complete/Complete.rpt"},
   {"id":"fault-lg","kind":"lg","name":"Line-to-Ground — Complete","family":"ANSI Unbalanced SC","study_types":[3,4,5],"path":"ANSI Unbalanced SC/Complete/Complete LG.rpt"},
   {"id":"fault-ll","kind":"ll","name":"Line-to-Line — Complete","family":"ANSI Unbalanced SC","study_types":[3,4,5],"path":"ANSI Unbalanced SC/Complete/Complete LL.rpt"},
-  {"id":"fault-llg","kind":"llg","name":"Line-to-Line-to-Ground — Complete","family":"ANSI Unbalanced SC","study_types":[3,4,5],"path":"ANSI Unbalanced SC/Complete/Complete LLG.rpt"}
+  {"id":"fault-llg","kind":"llg","name":"Line-to-Line-to-Ground — Complete","family":"ANSI Unbalanced SC","study_types":[3,4,5],"path":"ANSI Unbalanced SC/Complete/Complete LLG.rpt"},
+  {"id":"ulf-summary","kind":"summary","name":"Summary","family":"Unbalanced Load Flow","study_types":[2],"path":"Unbalanced Load Flow/Summary/Summary.rpt"},
+  {"id":"ulf-complete","kind":"complete","name":"Complete","family":"Unbalanced Load Flow","study_types":[2],"path":"Unbalanced Load Flow/Complete/Complete.rpt"},
+  {"id":"ulf-bus-loading","kind":"bus-loading","name":"Bus Loading","family":"Unbalanced Load Flow","study_types":[2],"path":"Unbalanced Load Flow/Summary/Bus Loading.rpt"},
+  {"id":"ulf-branch-loading","kind":"branch-loading","name":"Branch Loading","family":"Unbalanced Load Flow","study_types":[2],"path":"Unbalanced Load Flow/Summary/Branch Loading.rpt"},
+  {"id":"ulf-losses","kind":"losses","name":"Losses","family":"Unbalanced Load Flow","study_types":[2],"path":"Unbalanced Load Flow/Summary/Losses.rpt"},
+  {"id":"ulf-alert-complete","kind":"alert-complete","name":"Alert — Complete","family":"Unbalanced Load Flow","study_types":[2],"path":"Unbalanced Load Flow/Summary/Alert Complete.rpt"},
+  {"id":"ulf-alert-critical","kind":"alert-critical","name":"Alert — Critical","family":"Unbalanced Load Flow","study_types":[2],"path":"Unbalanced Load Flow/Summary/Alert Critical.rpt"},
+  {"id":"ulf-alert-marginal","kind":"alert-marginal","name":"Alert — Marginal","family":"Unbalanced Load Flow","study_types":[2],"path":"Unbalanced Load Flow/Summary/Alert Marginal.rpt"}
 ]

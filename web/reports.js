@@ -380,7 +380,7 @@ window.ETAPReports = (() => {
       headers = {...drafts.get(chosen)};
       selected = new Set(catalog.studies.filter(s => s.ready).map(s => s.project_id));
       root.innerHTML = `
-        <input type="file" id="report-file-input" accept=".sa1s,.sa2s" hidden>
+        <input type="file" id="report-file-input" accept=".sa1s,.sa2s,.ul1s" hidden>
         <div class="page-title-row"><div><h1 class="page-title">Reports</h1><p class="page-desc">Create, customize and download ETAP reports.</p></div><div class="report-page-actions"><span id="report-service-status" role="status"></span><button id="report-add-study" class="report-secondary">+ Add study</button></div></div>
         <p id="report-offline" class="report-notice"></p>
         <div class="report-tabs" role="tablist" aria-label="Reports">
