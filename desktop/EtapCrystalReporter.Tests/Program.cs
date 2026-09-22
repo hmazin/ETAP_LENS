@@ -195,6 +195,15 @@ internal static class Tests
                 using (var cancel = new CancellationTokenSource())
                 { results.Clear(); service.RunBatch(new[] { good, good }, cancel.Token, r => { results.Add(r); cancel.Cancel(); }); Equal(1, results.Count); }
             });
+            Test("A job's Headers (e.g. hide serial number) reach Prepare through the batch pipeline", delegate
+            {
+                var fake = new FakeReports();
+                var service = new BatchReportService(databases, fake, new ExportService(log), log);
+                var job = Job(Fixture("hide-sn.SA2S", 3), DummyTemplate("hide-sn"));
+                job.Headers = new Dictionary<string, string> { { "sn", null } };
+                Equal("Success", service.Run(job).Status);
+                True(fake.LastHeaders.ContainsKey("sn")); Equal(null, fake.LastHeaders["sn"]);
+            });
             Test("Report header changes never mutate the source or numerical study data", delegate
             {
                 string path = Fixture("headers.SA1S", 1);
@@ -282,7 +291,8 @@ internal static class Tests
             var runtime = new CrystalRuntime();
             var logger = new Logger(Path.Combine(args[3], "Logs"));
             var service = new BatchReportService(new EtapDatabaseService(logger), new CrystalReportService(runtime, logger), new ExportService(logger), logger);
-            var result = service.Run(new ReportJob { SourcePath = args[1], Template = TemplateCatalog.Load(args[2]), OutputDirectory = args[3] });
+            var headers = args.Length > 4 && args[4] == "hide-sn" ? new Dictionary<string, string> { { "sn", null } } : null;
+            var result = service.Run(new ReportJob { SourcePath = args[1], Template = TemplateCatalog.Load(args[2]), OutputDirectory = args[3], Headers = headers });
             Console.WriteLine(json.Serialize(result)); return result.Status == "Success" ? 0 : 1;
         }
         if (args[0] == "--batch")
@@ -387,7 +397,11 @@ internal static class Tests
     private static void Throws<T>(Action action) where T : Exception
     { try { action(); } catch (T) { return; } throw new Exception("Expected " + typeof(T).Name); }
     private sealed class FakeReports : IReportService
-    { public IReportSession Prepare(DatabaseSnapshot database, ReportTemplate template) { TemplateCatalog.ValidateStudy(template, database.Info); return new FakeSession(false); } }
+    {
+        public IDictionary<string, string> LastHeaders;
+        public IReportSession Prepare(DatabaseSnapshot database, ReportTemplate template, IDictionary<string, string> headers = null)
+        { LastHeaders = headers; TemplateCatalog.ValidateStudy(template, database.Info); return new FakeSession(false); }
+    }
     private sealed class FakeSession : IReportSession
     {
         private readonly bool fail;

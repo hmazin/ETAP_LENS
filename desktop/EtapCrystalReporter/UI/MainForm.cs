@@ -19,6 +19,7 @@ namespace EtapCrystalReporter.UI
         private readonly TextBox study = new TextBox { Dock = DockStyle.Fill, ReadOnly = true, Multiline = true, ScrollBars = ScrollBars.Vertical };
         private readonly CheckBox openPdf = new CheckBox { Text = "Open PDF after generation", AutoSize = true };
         private readonly CheckBox timestamp = new CheckBox { Text = "Include timestamp in filename", AutoSize = true };
+        private readonly CheckBox hideSerialNumber = new CheckBox { Text = "Hide serial number", AutoSize = true };
         private readonly ToolStripStatusLabel status = new ToolStripStatusLabel { Text = "Ready" };
         private readonly TableLayoutPanel layout;
         private readonly AppSettings settings;
@@ -62,8 +63,9 @@ namespace EtapCrystalReporter.UI
             }), 2);
             AddRow("Output Folder", output, Ui.Button("Browse…", delegate { output.Text = Ui.Folder(this, output.Text); }), 3);
             output.Text = settings.OutputDirectory; openPdf.Checked = settings.OpenPdf; timestamp.Checked = settings.Timestamp;
+            hideSerialNumber.Checked = settings.HideSerialNumber;
             var options = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, Padding = new Padding(0, 8, 0, 8) };
-            options.Controls.Add(openPdf); options.Controls.Add(timestamp);
+            options.Controls.Add(openPdf); options.Controls.Add(timestamp); options.Controls.Add(hideSerialNumber);
             layout.Controls.Add(options, 1, 4); layout.SetColumnSpan(options, 2);
             var actions = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill };
             actions.Controls.Add(Ui.Button("Preview Report", Preview));
@@ -73,7 +75,7 @@ namespace EtapCrystalReporter.UI
                 try
                 {
                     SaveSettings();
-                    using (var form = new BatchForm(template.Items.Cast<ReportTemplate>().ToList(), batch, output.Text, timestamp.Checked)) form.ShowDialog(this);
+                    using (var form = new BatchForm(template.Items.Cast<ReportTemplate>().ToList(), batch, output.Text, timestamp.Checked, Headers())) form.ShowDialog(this);
                 }
                 catch (Exception ex) { Ui.Error(this, ex); }
             }));
@@ -145,7 +147,8 @@ namespace EtapCrystalReporter.UI
         {
             if (string.IsNullOrWhiteSpace(output.Text)) throw new ArgumentException("Select an output folder.");
             settings.OutputDirectory = Path.GetFullPath(output.Text.Trim());
-            settings.OpenPdf = openPdf.Checked; settings.Timestamp = timestamp.Checked; settings.Save();
+            settings.OpenPdf = openPdf.Checked; settings.Timestamp = timestamp.Checked;
+            settings.HideSerialNumber = hideSerialNumber.Checked; settings.Save();
         }
 
         private ReportJob Job()
@@ -155,8 +158,11 @@ namespace EtapCrystalReporter.UI
             var selected = template.SelectedItem as ReportTemplate;
             if (selected == null) throw new ArgumentException("Select a Crystal .rpt template.");
             return new ReportJob { SourcePath = Path.GetFullPath(source.Text.Trim()), Template = TemplateCatalog.Load(selected.Path, selected.Name),
-                OutputDirectory = settings.OutputDirectory, Timestamp = timestamp.Checked };
+                OutputDirectory = settings.OutputDirectory, Timestamp = timestamp.Checked, Headers = Headers() };
         }
+
+        private Dictionary<string, string> Headers()
+        { return hideSerialNumber.Checked ? new Dictionary<string, string> { { "sn", null } } : null; }
 
         private async void Generate(object sender, EventArgs args)
         {
@@ -184,7 +190,7 @@ namespace EtapCrystalReporter.UI
                     using (var db = databases.Open(job.SourcePath))
                     {
                         job.Template = TemplateCatalog.Load(job.Template.Path, job.Template.Name);
-                        return new PreviewDocument { Session = reports.Prepare(db, job.Template), Study = db.Info };
+                        return new PreviewDocument { Session = reports.Prepare(db, job.Template, job.Headers), Study = db.Info };
                     }
                 }, exports, job, openPdf.Checked)) form.ShowDialog(this);
                 status.Text = "Ready";

@@ -10,6 +10,7 @@ namespace EtapCrystalReporter.Utilities
         public string OutputDirectory { get; set; }
         public bool OpenPdf { get; set; }
         public bool Timestamp { get; set; }
+        public bool HideSerialNumber { get; set; }
         public static string DataDirectory
         { get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ETAP Lens", "CrystalReporter"); } }
         public AppSettings()

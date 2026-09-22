@@ -25,7 +25,7 @@ namespace EtapCrystalReporter.Services
                     result.Study = database.Info.StudyName;
                     // Reload sidecar at execution time, so UI selections cannot keep stale settings.
                     job.Template = TemplateCatalog.Load(job.Template.Path, job.Template.Name);
-                    using (var report = reports.Prepare(database, job.Template))
+                    using (var report = reports.Prepare(database, job.Template, job.Headers))
                         result.Output = exports.Export(report, job, database.Info);
                     result.Status = "Success";
                     result.Message = database.Info.DetectionNote;

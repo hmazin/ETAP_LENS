@@ -20,7 +20,8 @@ namespace EtapCrystalReporter.UI
         private CancellationTokenSource cancellation;
         private bool running;
 
-        public BatchForm(IList<ReportTemplate> catalog, BatchReportService batch, string outputDirectory, bool timestamp)
+        public BatchForm(IList<ReportTemplate> catalog, BatchReportService batch, string outputDirectory, bool timestamp,
+            Dictionary<string, string> headers = null)
         {
             Ui.Style(this);
             Text = "Batch Reports";
@@ -63,7 +64,7 @@ namespace EtapCrystalReporter.UI
                 if (files.Items.Count == 0 || templates.CheckedItems.Count == 0)
                 { Ui.Error(this, new ArgumentException("Select at least one file and one template.")); return; }
                 var jobs = (from string path in files.Items from ReportTemplate template in templates.CheckedItems
-                    select new ReportJob { SourcePath = path, Template = template, OutputDirectory = outputDirectory, Timestamp = timestamp }).ToArray();
+                    select new ReportJob { SourcePath = path, Template = template, OutputDirectory = outputDirectory, Timestamp = timestamp, Headers = headers }).ToArray();
                 running = true; cancellation = new CancellationTokenSource(); results.Clear();
                 add.Enabled = remove.Enabled = start.Enabled = files.Enabled = templates.Enabled = false; cancel.Enabled = true;
                 status.Text = "Generating " + jobs.Length + " reports…";

@@ -53,6 +53,9 @@ namespace EtapCrystalReporter.Models
         public ReportTemplate Template { get; set; }
         public string OutputDirectory { get; set; }
         public bool Timestamp { get; set; }
+        // A field mapped to null hides both its label and value on the report
+        // (see ReportHeaders.ApplyPresentation). Null means no header overrides.
+        public Dictionary<string, string> Headers { get; set; }
     }
 
     public sealed class ReportResult
@@ -73,7 +76,7 @@ namespace EtapCrystalReporter.Models
 
     public interface IReportService
     {
-        IReportSession Prepare(DatabaseSnapshot database, ReportTemplate template);
+        IReportSession Prepare(DatabaseSnapshot database, ReportTemplate template, IDictionary<string, string> headers = null);
     }
 
     public sealed class DatabaseSnapshot : IDisposable

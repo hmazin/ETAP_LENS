@@ -15,10 +15,7 @@ namespace EtapCrystalReporter.Services
         private readonly Logger log;
         public CrystalReportService(CrystalRuntime runtime, Logger log) { this.runtime = runtime; this.log = log; }
 
-        public IReportSession Prepare(DatabaseSnapshot database, ReportTemplate template)
-        { return Prepare(database, template, null); }
-
-        public IReportSession Prepare(DatabaseSnapshot database, ReportTemplate template, IDictionary<string, string> headers)
+        public IReportSession Prepare(DatabaseSnapshot database, ReportTemplate template, IDictionary<string, string> headers = null)
         {
             ReportHeaders.Validate(headers);
             if (Thread.CurrentThread.GetApartmentState() != ApartmentState.STA)
