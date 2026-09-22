@@ -14,6 +14,7 @@ using EtapCrystalReporter.UI;
 internal static class Tests
 {
     private static int failures;
+    private static int total;
     private static string root;
     private static Logger log;
     private static EtapDatabaseService databases;
@@ -34,6 +35,18 @@ internal static class Tests
                     string path = Fixture("renamed-" + type + ".SA2S", type);
                     using (var db = databases.Open(path)) { Equal(type, db.Info.StudyType); True(!db.Info.StudyName.StartsWith("Unknown")); Equal(2, db.Info.Tables.Count); }
                 }
+            });
+            Test("Unbalanced load flow is detected from LFSumTotalLF3PH, not ISCStudyCase", delegate
+            {
+                string path = Path.Combine(root, "flow.UL1S");
+                Execute(path, "CREATE TABLE LFSumTotalLF3PH(BusID TEXT, MW REAL); INSERT INTO LFSumTotalLF3PH VALUES ('Bus A', 1.5);");
+                using (var db = databases.Open(path)) { Equal(2, db.Info.StudyType); Equal("Unbalanced Load Flow", db.Info.StudyName); }
+            });
+            Test("Unbalanced load flow with no result rows remains unknown", delegate
+            {
+                string path = Path.Combine(root, "empty.UL1S");
+                Execute(path, "CREATE TABLE LFSumTotalLF3PH(BusID TEXT, MW REAL);");
+                using (var db = databases.Open(path)) { Equal(null, db.Info.StudyType); True(db.Info.DetectionNote.Contains("no load flow results")); }
             });
             Test("Source is unchanged and report spacer rows survive", delegate
             {
@@ -198,7 +211,7 @@ internal static class Tests
                 Throws<InvalidDataException>(() => ReportHeaders.Validate(new Dictionary<string, string> { { "date", new string('x', 33) } }));
                 Throws<InvalidDataException>(() => ReportHeaders.Validate(new Dictionary<string, string> { { "project", "A\nB" } }));
             });
-            Console.WriteLine(failures == 0 ? "All 20 tests passed." : failures + " test(s) failed.");
+            Console.WriteLine(failures == 0 ? "All " + total + " tests passed." : failures + " of " + total + " test(s) failed.");
             return failures == 0 ? 0 : 1;
         }
         catch (Exception ex) { Console.Error.WriteLine(ex.ToString()); return 1; }
@@ -345,7 +358,7 @@ internal static class Tests
     private static ReportJob Job(string path, ReportTemplate template)
     { return new ReportJob { SourcePath = path, Template = template, OutputDirectory = Path.Combine(root, "Output") }; }
     private static void Test(string name, Action test)
-    { try { test(); Console.WriteLine("PASS " + name); } catch (Exception ex) { failures++; Console.WriteLine("FAIL " + name + ": " + ex); } }
+    { total++; try { test(); Console.WriteLine("PASS " + name); } catch (Exception ex) { failures++; Console.WriteLine("FAIL " + name + ": " + ex); } }
     private static void True(bool value) { if (!value) throw new Exception("Assertion failed."); }
     private static void Equal(object expected, object actual)
     { if (!object.Equals(expected, actual)) throw new Exception("Expected " + expected + "; got " + actual); }
