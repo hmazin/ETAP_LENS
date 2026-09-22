@@ -1,0 +1,10 @@
+{
+  "FieldMappings": {
+    "ILFStudyCaseLF3PH/Charger": "UseChargerOpLoad",
+    "ILFStudyCase3PH/Charger": "UseChargerOpLoad"
+  },
+  "OptionalFields": [
+    "IBusLF3PH/Reserved3",
+    "IVoltageRegulator/MaxMVA"
+  ]
+}

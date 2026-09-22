@@ -126,6 +126,28 @@ internal static class Tests
                 using (var shaped = TableBinding.Shape(source, "Alias", new Dictionary<string, Type> { { "ID", typeof(string) }, { "kV", typeof(double) } }))
                 { Equal("Alias", shaped.TableName); Equal(13.8, shaped.Rows[0]["kV"]); Equal(DBNull.Value, shaped.Rows[1]["kV"]); }
             });
+            Test("A renamed source column resolves through the template's FieldMappings", delegate
+            {
+                using (var table = new DataTable("T"))
+                {
+                    table.Columns.Add("UseChargerOpLoad", typeof(long)); table.Rows.Add(1);
+                    var mappings = new Dictionary<string, string> { { "T/Charger", "UseChargerOpLoad" } };
+                    using (var shaped = TableBinding.Shape(table, "T", new Dictionary<string, Type> { { "Charger", typeof(int) } }, null, mappings))
+                        Equal(1, shaped.Rows[0]["Charger"]);
+                    Throws<InvalidDataException>(() => TableBinding.Shape(table, "T", new Dictionary<string, Type> { { "Charger", typeof(int) } }));
+                }
+            });
+            Test("A field listed as optional binds blank when genuinely absent", delegate
+            {
+                using (var table = new DataTable("T"))
+                {
+                    table.Columns.Add("Present", typeof(long)); table.Rows.Add(7);
+                    var optional = new HashSet<string>(new[] { "T/Reserved3" }, StringComparer.OrdinalIgnoreCase);
+                    using (var shaped = TableBinding.Shape(table, "T",
+                        new Dictionary<string, Type> { { "Present", typeof(int) }, { "Reserved3", typeof(int) } }, null, null, optional))
+                    { Equal(7, shaped.Rows[0]["Present"]); Equal(DBNull.Value, shaped.Rows[0]["Reserved3"]); }
+                }
+            });
             Test("Missing fields and lossy integer conversion fail explicitly", delegate
             {
                 using (var table = new DataTable("T"))

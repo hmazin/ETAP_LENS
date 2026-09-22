@@ -19,11 +19,22 @@ namespace EtapCrystalReporter.Models
         // Empty means no study restriction. The schema is still checked by CrystalReportService.
         public int[] StudyTypes { get; set; }
         public Dictionary<string, string> TableMappings { get; set; }
+        // Keyed "TableAlias/CrystalFieldName" (optionally "Subreport.rpt/TableAlias/CrystalFieldName"),
+        // for when a template's saved field name no longer matches the source column - e.g. an ETAP
+        // schema rename. Unmapped fields still resolve by name as before.
+        public Dictionary<string, string> FieldMappings { get; set; }
+        // Same key convention as FieldMappings. A field listed here binds as an all-blank column
+        // (instead of failing the report) when genuinely absent from the source - e.g. a template's
+        // reserved/placeholder field never populated in this ETAP schema version. Still checked
+        // against FieldMappings first, so a real rename takes precedence over treating it as blank.
+        public string[] OptionalFields { get; set; }
         public Dictionary<string, object> Parameters { get; set; }
         public TemplateOptions()
         {
             StudyTypes = new int[0];
             TableMappings = new Dictionary<string, string>();
+            FieldMappings = new Dictionary<string, string>();
+            OptionalFields = new string[0];
             Parameters = new Dictionary<string, object>();
         }
     }

@@ -65,7 +65,8 @@ namespace EtapCrystalReporter.Services
                 using (DataTable source = database.ReadTable(actual))
                 {
                     ReportHeaders.ApplyToTable(source, headers);
-                    DataTable shaped = TableBinding.Shape(source, alias, fields);
+                    DataTable shaped = TableBinding.Shape(source, alias, fields, scope, template.Options.FieldMappings,
+                        new HashSet<string>(template.Options.OptionalFields, StringComparer.OrdinalIgnoreCase));
                     retained.Add(shaped);
                     table.SetDataSource(shaped);
                     log.Write("report.table", new { scope, alias, sourceTable = actual, rows = source.Rows.Count, columns = fields.Keys.ToArray() });

@@ -1,0 +1,6 @@
+{
+  "FieldMappings": {
+    "ILFStudyCaseLF3PH/Charger": "UseChargerOpLoad",
+    "ILFStudyCase3PH/Charger": "UseChargerOpLoad"
+  }
+}

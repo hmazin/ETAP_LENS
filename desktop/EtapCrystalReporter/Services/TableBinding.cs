@@ -23,6 +23,23 @@ namespace EtapCrystalReporter.Services
             return Match(leaf, tables);
         }
 
+        private static string ResolveField(string alias, string scope, string fieldName, IDictionary<string, string> fieldMappings)
+        {
+            if (fieldMappings == null) return fieldName;
+            string mapped;
+            string scoped = string.IsNullOrEmpty(scope) ? null : scope + "/" + alias + "/" + fieldName;
+            if (scoped != null && fieldMappings.TryGetValue(scoped, out mapped)) return mapped;
+            if (fieldMappings.TryGetValue(alias + "/" + fieldName, out mapped)) return mapped;
+            return fieldName;
+        }
+
+        private static bool IsOptional(string alias, string scope, string fieldName, ISet<string> optionalFields)
+        {
+            if (optionalFields == null) return false;
+            string scoped = string.IsNullOrEmpty(scope) ? null : scope + "/" + alias + "/" + fieldName;
+            return (scoped != null && optionalFields.Contains(scoped)) || optionalFields.Contains(alias + "/" + fieldName);
+        }
+
         private static string Match(string name, IEnumerable<string> tables)
         {
             string match = tables.FirstOrDefault(x => x.Equals(name, StringComparison.OrdinalIgnoreCase));
@@ -51,16 +68,26 @@ namespace EtapCrystalReporter.Services
             }
         }
 
-        public static DataTable Shape(DataTable source, string alias, IDictionary<string, Type> fields)
+        public static DataTable Shape(DataTable source, string alias, IDictionary<string, Type> fields,
+            string scope = null, IDictionary<string, string> fieldMappings = null, ISet<string> optionalFields = null)
         {
             var output = new DataTable(alias) { Locale = CultureInfo.InvariantCulture };
             try
             {
+                // A null entry means "no source column" - an optional field bound as all-blank below.
                 var columns = new List<DataColumn>();
                 foreach (var field in fields)
                 {
-                    DataColumn column = source.Columns.Cast<DataColumn>().FirstOrDefault(x => x.ColumnName.Equals(field.Key, StringComparison.OrdinalIgnoreCase));
-                    if (column == null) throw new InvalidDataException("Table '" + source.TableName + "' is missing Crystal field '" + field.Key + "'.");
+                    string sourceName = ResolveField(alias, scope, field.Key, fieldMappings);
+                    DataColumn column = source.Columns.Cast<DataColumn>().FirstOrDefault(x => x.ColumnName.Equals(sourceName, StringComparison.OrdinalIgnoreCase));
+                    if (column == null && !IsOptional(alias, scope, field.Key, optionalFields))
+                    {
+                        string key = (string.IsNullOrEmpty(scope) ? "" : scope + "/") + alias + "/" + field.Key;
+                        throw new InvalidDataException("Table '" + source.TableName + "' (Crystal alias '" + alias + "'" +
+                            (string.IsNullOrEmpty(scope) ? "" : ", subreport '" + scope + "'") + ") is missing Crystal field '" + field.Key +
+                            (sourceName == field.Key ? "" : "' (mapped to '" + sourceName) +
+                            "'. Add '" + key + "' to the template's .rpt.json FieldMappings or OptionalFields.");
+                    }
                     columns.Add(column);
                     output.Columns.Add(field.Key, field.Value);
                 }
@@ -77,6 +104,7 @@ namespace EtapCrystalReporter.Services
                     var values = new object[columns.Count];
                     for (int i = 0; i < columns.Count; i++)
                     {
+                        if (columns[i] == null) { values[i] = DBNull.Value; continue; }
                         try { values[i] = ConvertValue(row[columns[i]], output.Columns[i].DataType); }
                         catch (Exception ex)
                         {

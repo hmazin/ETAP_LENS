@@ -22,7 +22,9 @@ desktop/**/obj/
 desktop/.packages/
 desktop/**/Logs/
 desktop/**/Templates/**/*.rpt
-desktop/**/Templates/**/*.rpt.json
+# .rpt.json sidecars ARE tracked: they hold no proprietary content, only
+# generic schema-compatibility fixes (FieldMappings/OptionalFields) for the
+# licensed .rpt templates above, worth keeping across clones.
 *.SA1S
 *.SA2S
 *.sa1s

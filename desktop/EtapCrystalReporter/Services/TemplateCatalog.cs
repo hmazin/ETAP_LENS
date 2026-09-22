@@ -31,11 +31,17 @@ namespace EtapCrystalReporter.Services
             if (File.Exists(path + ".json"))
             {
                 options = new JavaScriptSerializer().Deserialize<TemplateOptions>(File.ReadAllText(path + ".json"));
-                if (options == null || options.StudyTypes == null || options.TableMappings == null || options.Parameters == null)
-                    throw new InvalidDataException("Template metadata must contain valid StudyTypes, TableMappings and Parameters values.");
+                if (options == null || options.StudyTypes == null || options.TableMappings == null || options.FieldMappings == null
+                    || options.OptionalFields == null || options.Parameters == null)
+                    throw new InvalidDataException("Template metadata must contain valid StudyTypes, TableMappings, FieldMappings, OptionalFields and Parameters values.");
                 options.TableMappings = new Dictionary<string, string>(options.TableMappings, StringComparer.OrdinalIgnoreCase);
                 if (options.TableMappings.Any(x => string.IsNullOrWhiteSpace(x.Key) || string.IsNullOrWhiteSpace(x.Value)))
                     throw new InvalidDataException("Table mappings cannot be empty.");
+                options.FieldMappings = new Dictionary<string, string>(options.FieldMappings, StringComparer.OrdinalIgnoreCase);
+                if (options.FieldMappings.Any(x => string.IsNullOrWhiteSpace(x.Key) || string.IsNullOrWhiteSpace(x.Value)))
+                    throw new InvalidDataException("Field mappings cannot be empty.");
+                if (options.OptionalFields.Any(string.IsNullOrWhiteSpace))
+                    throw new InvalidDataException("Optional field entries cannot be empty.");
             }
             return new ReportTemplate { Path = path, Name = name ?? Path.GetFileNameWithoutExtension(path), Options = options };
         }
