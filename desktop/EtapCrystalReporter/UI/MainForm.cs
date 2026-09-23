@@ -135,6 +135,12 @@ namespace EtapCrystalReporter.UI
                 study.Text = info.StudyName + Environment.NewLine + "Valid SQLite database — " + info.Tables.Count + " tables" + Environment.NewLine +
                     info.DetectionNote + Environment.NewLine + Environment.NewLine + "Tables: " + string.Join(", ", info.Tables);
                 status.Text = "Database validated.";
+                if (info.StudyType.HasValue)
+                {
+                    var match = template.Items.Cast<ReportTemplate>().FirstOrDefault(t => t.Options.StudyTypes.Contains(info.StudyType.Value));
+                    if (match != null) { template.SelectedItem = match; status.Text = "Database validated. Recommended template selected."; }
+                    else status.Text = "Database validated. No template in your library declares StudyTypes for " + info.StudyName + " — pick one manually.";
+                }
             }
             catch (Exception ex)
             {
