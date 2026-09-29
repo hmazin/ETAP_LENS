@@ -371,6 +371,23 @@ internal static class Tests
             }
             return 0;
         }
+        if (args[0] == "--ui-smoke-batch")
+        {
+            System.Windows.Forms.Application.EnableVisualStyles();
+            var catalog = new List<ReportTemplate> { DummyTemplate("Summary"), DummyTemplate("Complete") };
+            var service = new BatchReportService(databases, new FakeReports(), new ExportService(log), log);
+            using (var form = new BatchForm(catalog, service, root, false))
+            {
+                form.StartPosition = System.Windows.Forms.FormStartPosition.Manual;
+                form.Location = new System.Drawing.Point(-20000, -20000); form.ShowInTaskbar = false;
+                form.Show();
+                for (int i = 0; i < 40; i++) { System.Windows.Forms.Application.DoEvents(); Thread.Sleep(50); }
+                using (var bitmap = new System.Drawing.Bitmap(form.Width, form.Height))
+                { form.DrawToBitmap(bitmap, new System.Drawing.Rectangle(0, 0, form.Width, form.Height)); bitmap.Save(args[1]); }
+                form.Close();
+            }
+            return 0;
+        }
         if (args[0] == "--preview-smoke")
         {
             System.Windows.Forms.Application.EnableVisualStyles();

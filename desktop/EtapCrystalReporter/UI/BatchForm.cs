@@ -17,6 +17,7 @@ namespace EtapCrystalReporter.UI
     {
         private readonly ListBox files = new ListBox { Dock = DockStyle.Fill, SelectionMode = SelectionMode.MultiExtended, HorizontalScrollbar = true };
         private readonly CheckedListBox templates = new CheckedListBox { Dock = DockStyle.Fill, CheckOnClick = true, HorizontalScrollbar = true };
+        private readonly TextBox folderPath = new TextBox { Dock = DockStyle.Fill };
         private readonly BindingList<ReportResult> results = new BindingList<ReportResult>();
         private readonly Label status = Ui.Label("Select result files and one or more templates.");
         private CancellationTokenSource cancellation;
@@ -33,13 +34,35 @@ namespace EtapCrystalReporter.UI
             // user can still check more manually.
             foreach (var template in catalog)
                 templates.Items.Add(template, TemplateCatalog.MatchesKind(template, preferredKind));
-            var root = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(12), RowCount = 5, ColumnCount = 2 };
+            var root = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(12), RowCount = 7, ColumnCount = 2 };
             root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55)); root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45));
-            root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); root.RowStyles.Add(new RowStyle(SizeType.Percent, 35));
-            root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); root.RowStyles.Add(new RowStyle(SizeType.Percent, 65)); root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            root.Controls.Add(Ui.Label("ETAP result files"), 0, 0);
-            root.Controls.Add(Ui.Label("Templates — only the ones matching each file's detected study type are used"), 1, 0);
-            root.Controls.Add(files, 0, 1); root.Controls.Add(templates, 1, 1);
+            root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            root.RowStyles.Add(new RowStyle(SizeType.Percent, 35)); root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            root.RowStyles.Add(new RowStyle(SizeType.Percent, 65)); root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            Action<string> addFolderPath = delegate(string folder)
+            {
+                folder = (folder ?? "").Trim().Trim('"');
+                if (folder.Length == 0) return;
+                if (!Directory.Exists(folder)) { status.Text = "That folder doesn't exist: " + folder; return; }
+                var found = Directory.EnumerateFiles(folder, "*", SearchOption.AllDirectories)
+                    .Where(p => FileValidator.StudyExtensions.Contains(Path.GetExtension(p), StringComparer.OrdinalIgnoreCase))
+                    .OrderBy(p => p, StringComparer.OrdinalIgnoreCase).ToArray();
+                foreach (string path in found)
+                    if (!files.Items.Cast<string>().Contains(path, StringComparer.OrdinalIgnoreCase)) files.Items.Add(path);
+                status.Text = found.Length == 0 ? "No .SA1S/.SA2S/.UL1S files found under that folder." :
+                    "Added " + found.Length + " result file(s) from " + folder + ".";
+            };
+            var pathRow = new TableLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, ColumnCount = 2 };
+            pathRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); pathRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            var addPasted = Ui.Button("Add", delegate { addFolderPath(folderPath.Text); folderPath.Clear(); });
+            folderPath.KeyDown += delegate(object sender, KeyEventArgs e) { if (e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; addPasted.PerformClick(); } };
+            pathRow.Controls.Add(folderPath, 0, 0); pathRow.Controls.Add(addPasted, 1, 0);
+            var pathLabel = Ui.Label("Paste a folder path (searched recursively):");
+            root.Controls.Add(pathLabel, 0, 0); root.SetColumnSpan(pathLabel, 2);
+            root.Controls.Add(pathRow, 0, 1); root.SetColumnSpan(pathRow, 2);
+            root.Controls.Add(Ui.Label("ETAP result files"), 0, 2);
+            root.Controls.Add(Ui.Label("Templates — only the ones matching each file's detected study type are used"), 1, 2);
+            root.Controls.Add(files, 0, 3); root.Controls.Add(templates, 1, 3);
             var actions = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill };
             var add = Ui.Button("Add files…", delegate
             {
@@ -48,24 +71,13 @@ namespace EtapCrystalReporter.UI
                         foreach (string path in dialog.FileNames)
                             if (!files.Items.Cast<string>().Contains(path, StringComparer.OrdinalIgnoreCase)) files.Items.Add(path);
             });
-            var addFolder = Ui.Button("Add folder…", delegate
-            {
-                string folder = Ui.Folder(this, "");
-                if (string.IsNullOrEmpty(folder)) return;
-                var found = Directory.EnumerateFiles(folder, "*", SearchOption.AllDirectories)
-                    .Where(p => FileValidator.StudyExtensions.Contains(Path.GetExtension(p), StringComparer.OrdinalIgnoreCase))
-                    .OrderBy(p => p, StringComparer.OrdinalIgnoreCase).ToArray();
-                foreach (string path in found)
-                    if (!files.Items.Cast<string>().Contains(path, StringComparer.OrdinalIgnoreCase)) files.Items.Add(path);
-                status.Text = found.Length == 0 ? "No .SA1S/.SA2S/.UL1S files found under that folder." :
-                    "Added " + found.Length + " result file(s) from " + folder + ".";
-            });
+            var addFolder = Ui.Button("Browse for folder…", delegate { addFolderPath(Ui.Folder(this, "")); });
             var remove = Ui.Button("Remove selected", delegate { foreach (var item in files.SelectedItems.Cast<string>().ToArray()) files.Items.Remove(item); });
             var start = Ui.Button("Generate PDFs", null);
             var cancel = Ui.Button("Cancel after current", delegate { if (cancellation != null) { cancellation.Cancel(); status.Text = "Cancelling after the current report finishes…"; } });
             cancel.Enabled = false;
             actions.Controls.AddRange(new Control[] { add, addFolder, remove, start, cancel });
-            root.Controls.Add(actions, 0, 2); root.SetColumnSpan(actions, 2);
+            root.Controls.Add(actions, 0, 4); root.SetColumnSpan(actions, 2);
             var grid = new DataGridView { Dock = DockStyle.Fill, ReadOnly = true, AllowUserToAddRows = false, AllowUserToDeleteRows = false,
                 AutoGenerateColumns = true, AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill, DataSource = results, RowHeadersVisible = false };
             grid.CellDoubleClick += delegate(object sender, DataGridViewCellEventArgs e)
@@ -75,15 +87,15 @@ namespace EtapCrystalReporter.UI
                 try { if (result.Status == "Success") Ui.Open(result.Output); else MessageBox.Show(this, result.Message, "Report diagnostics"); }
                 catch (Exception ex) { Ui.Error(this, ex); }
             };
-            root.Controls.Add(grid, 0, 3); root.SetColumnSpan(grid, 2);
-            root.Controls.Add(status, 0, 4); root.SetColumnSpan(status, 2);
+            root.Controls.Add(grid, 0, 5); root.SetColumnSpan(grid, 2);
+            root.Controls.Add(status, 0, 6); root.SetColumnSpan(status, 2);
             Controls.Add(root);
             start.Click += async delegate
             {
                 if (files.Items.Count == 0 || templates.CheckedItems.Count == 0)
                 { Ui.Error(this, new ArgumentException("Select at least one file and one template.")); return; }
                 running = true; cancellation = new CancellationTokenSource(); results.Clear();
-                add.Enabled = addFolder.Enabled = remove.Enabled = start.Enabled = files.Enabled = templates.Enabled = false; cancel.Enabled = true;
+                add.Enabled = addFolder.Enabled = addPasted.Enabled = folderPath.Enabled = remove.Enabled = start.Enabled = files.Enabled = templates.Enabled = false; cancel.Enabled = true;
                 status.Text = "Matching " + files.Items.Count + " file(s) to compatible templates…";
                 var paths = files.Items.Cast<string>().ToArray();
                 var checkedTemplates = templates.CheckedItems.Cast<ReportTemplate>().ToArray();
@@ -91,7 +103,7 @@ namespace EtapCrystalReporter.UI
                 if (jobs.Length == 0)
                 {
                     status.Text = "No checked template matches any selected file's detected study type.";
-                    running = false; add.Enabled = addFolder.Enabled = remove.Enabled = start.Enabled = files.Enabled = templates.Enabled = true; cancel.Enabled = false;
+                    running = false; add.Enabled = addFolder.Enabled = addPasted.Enabled = folderPath.Enabled = remove.Enabled = start.Enabled = files.Enabled = templates.Enabled = true; cancel.Enabled = false;
                     return;
                 }
                 status.Text = "Generating " + jobs.Length + " reports…";
@@ -107,7 +119,7 @@ namespace EtapCrystalReporter.UI
                 finally
                 {
                     running = false; cancellation.Dispose(); cancellation = null;
-                    add.Enabled = addFolder.Enabled = remove.Enabled = start.Enabled = files.Enabled = templates.Enabled = true; cancel.Enabled = false;
+                    add.Enabled = addFolder.Enabled = addPasted.Enabled = folderPath.Enabled = remove.Enabled = start.Enabled = files.Enabled = templates.Enabled = true; cancel.Enabled = false;
                 }
             };
             FormClosing += delegate(object sender, FormClosingEventArgs e)
