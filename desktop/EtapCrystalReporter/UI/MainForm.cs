@@ -80,7 +80,7 @@ namespace EtapCrystalReporter.UI
                 try
                 {
                     SaveSettings();
-                    using (var form = new BatchForm(template.Items.Cast<ReportTemplate>().ToList(), batch, output.Text, timestamp.Checked, Headers(), PreferredKind())) form.ShowDialog(this);
+                    using (var form = new BatchForm(template.Items.Cast<ReportTemplate>().ToList(), batch, output.Text, timestamp.Checked, hideSerialNumber.Checked, PreferredKind())) form.ShowDialog(this);
                 }
                 catch (Exception ex) { Ui.Error(this, ex); }
             }));

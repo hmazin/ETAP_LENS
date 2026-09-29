@@ -220,6 +220,15 @@ internal static class Tests
                 using (var cancel = new CancellationTokenSource())
                 { results.Clear(); service.RunBatch(new[] { good, good }, cancel.Token, r => { results.Add(r); cancel.Cancel(); }); Equal(1, results.Count); }
             });
+            Test("RunBatch reports each job starting before it completes, in order", delegate
+            {
+                var service = new BatchReportService(databases, new FakeReports(), new ExportService(log), log);
+                var good = Job(Fixture("progress.SA2S", 3), DummyTemplate("progress"));
+                var events = new List<string>();
+                service.RunBatch(new[] { good, good }, CancellationToken.None,
+                    r => events.Add("done:" + r.Status), j => events.Add("start"));
+                Equal("start,done:Success,start,done:Success", string.Join(",", events));
+            });
             Test("A job's Headers (e.g. hide serial number) reach Prepare through the batch pipeline", delegate
             {
                 var fake = new FakeReports();

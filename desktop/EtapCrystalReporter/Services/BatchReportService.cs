@@ -73,11 +73,12 @@ namespace EtapCrystalReporter.Services
             return result;
         }
 
-        public void RunBatch(IEnumerable<ReportJob> jobs, CancellationToken cancellation, Action<ReportResult> progress)
+        public void RunBatch(IEnumerable<ReportJob> jobs, CancellationToken cancellation, Action<ReportResult> progress, Action<ReportJob> starting = null)
         {
             foreach (var job in jobs)
             {
                 if (cancellation.IsCancellationRequested) break;
+                if (starting != null) starting(job);
                 progress(Run(job));
             }
         }

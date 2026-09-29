@@ -18,14 +18,20 @@ namespace EtapCrystalReporter.UI
         private readonly ListBox files = new ListBox { Dock = DockStyle.Fill, SelectionMode = SelectionMode.MultiExtended, HorizontalScrollbar = true };
         private readonly CheckedListBox templates = new CheckedListBox { Dock = DockStyle.Fill, CheckOnClick = true, HorizontalScrollbar = true };
         private readonly TextBox folderPath = new TextBox { Dock = DockStyle.Fill };
+        private readonly CheckBox hideSerialNumber = new CheckBox { Text = "Hide serial number", AutoSize = true };
+        private readonly ProgressBar progressBar = new ProgressBar { Dock = DockStyle.Fill, Style = ProgressBarStyle.Continuous };
         private readonly BindingList<ReportResult> results = new BindingList<ReportResult>();
         private readonly Label status = Ui.Label("Select result files and one or more templates.");
         private CancellationTokenSource cancellation;
         private bool running;
 
+        private Dictionary<string, string> Headers()
+        { return hideSerialNumber.Checked ? new Dictionary<string, string> { { "sn", null } } : null; }
+
         public BatchForm(IList<ReportTemplate> catalog, BatchReportService batch, string outputDirectory, bool timestamp,
-            Dictionary<string, string> headers = null, string preferredKind = "summary")
+            bool hideSerialNumberDefault = false, string preferredKind = "summary")
         {
+            hideSerialNumber.Checked = hideSerialNumberDefault;
             Ui.Style(this);
             Text = "Batch Reports";
             Size = new Size(1100, 750); MinimumSize = new Size(850, 550);
@@ -34,11 +40,11 @@ namespace EtapCrystalReporter.UI
             // user can still check more manually.
             foreach (var template in catalog)
                 templates.Items.Add(template, TemplateCatalog.MatchesKind(template, preferredKind));
-            var root = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(12), RowCount = 7, ColumnCount = 2 };
+            var root = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(12), RowCount = 8, ColumnCount = 2 };
             root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55)); root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45));
             root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             root.RowStyles.Add(new RowStyle(SizeType.Percent, 35)); root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            root.RowStyles.Add(new RowStyle(SizeType.Percent, 65)); root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            root.RowStyles.Add(new RowStyle(SizeType.Percent, 65)); root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             Action<string> addFolderPath = delegate(string folder)
             {
                 folder = (folder ?? "").Trim().Trim('"');
@@ -76,7 +82,7 @@ namespace EtapCrystalReporter.UI
             var start = Ui.Button("Generate PDFs", null);
             var cancel = Ui.Button("Cancel after current", delegate { if (cancellation != null) { cancellation.Cancel(); status.Text = "Cancelling after the current report finishes…"; } });
             cancel.Enabled = false;
-            actions.Controls.AddRange(new Control[] { add, addFolder, remove, start, cancel });
+            actions.Controls.AddRange(new Control[] { add, addFolder, remove, hideSerialNumber, start, cancel });
             root.Controls.Add(actions, 0, 4); root.SetColumnSpan(actions, 2);
             var grid = new DataGridView { Dock = DockStyle.Fill, ReadOnly = true, AllowUserToAddRows = false, AllowUserToDeleteRows = false,
                 AutoGenerateColumns = true, AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill, DataSource = results, RowHeadersVisible = false };
@@ -88,30 +94,43 @@ namespace EtapCrystalReporter.UI
                 catch (Exception ex) { Ui.Error(this, ex); }
             };
             root.Controls.Add(grid, 0, 5); root.SetColumnSpan(grid, 2);
-            root.Controls.Add(status, 0, 6); root.SetColumnSpan(status, 2);
+            root.Controls.Add(progressBar, 0, 6); root.SetColumnSpan(progressBar, 2);
+            root.Controls.Add(status, 0, 7); root.SetColumnSpan(status, 2);
             Controls.Add(root);
             start.Click += async delegate
             {
                 if (files.Items.Count == 0 || templates.CheckedItems.Count == 0)
                 { Ui.Error(this, new ArgumentException("Select at least one file and one template.")); return; }
                 running = true; cancellation = new CancellationTokenSource(); results.Clear();
-                add.Enabled = addFolder.Enabled = addPasted.Enabled = folderPath.Enabled = remove.Enabled = start.Enabled = files.Enabled = templates.Enabled = false; cancel.Enabled = true;
+                add.Enabled = addFolder.Enabled = addPasted.Enabled = folderPath.Enabled = remove.Enabled = start.Enabled = files.Enabled = templates.Enabled = hideSerialNumber.Enabled = false; cancel.Enabled = true;
                 status.Text = "Matching " + files.Items.Count + " file(s) to compatible templates…";
                 var paths = files.Items.Cast<string>().ToArray();
                 var checkedTemplates = templates.CheckedItems.Cast<ReportTemplate>().ToArray();
+                var headers = Headers();
                 var jobs = await Task.Run(() => batch.MatchJobs(paths, checkedTemplates, outputDirectory, timestamp, headers));
                 if (jobs.Length == 0)
                 {
                     status.Text = "No checked template matches any selected file's detected study type.";
-                    running = false; add.Enabled = addFolder.Enabled = addPasted.Enabled = folderPath.Enabled = remove.Enabled = start.Enabled = files.Enabled = templates.Enabled = true; cancel.Enabled = false;
+                    running = false; add.Enabled = addFolder.Enabled = addPasted.Enabled = folderPath.Enabled = remove.Enabled = start.Enabled = files.Enabled = templates.Enabled = hideSerialNumber.Enabled = true; cancel.Enabled = false;
                     return;
                 }
+                progressBar.Minimum = 0; progressBar.Maximum = jobs.Length; progressBar.Value = 0;
                 status.Text = "Generating " + jobs.Length + " reports…";
-                // Progress callbacks run on the UI thread. The SDK itself stays on one STA worker.
-                var progress = new Progress<ReportResult>(result => { results.Add(result); status.Text = results.Count + " / " + jobs.Length + " — " + result.Status; });
+                // Both callbacks run on the UI thread (via Progress<T>); the SDK itself stays on one STA worker.
+                var starting = new Progress<ReportJob>(job => status.Text = "Processing " + (progressBar.Value + 1) + " / " + jobs.Length +
+                    ": " + Path.GetFileName(job.SourcePath) + " → " + job.Template.Name + " …");
+                var progress = new Progress<ReportResult>(result =>
+                {
+                    results.Add(result); progressBar.Value = results.Count;
+                    status.Text = results.Count + " / " + jobs.Length + " — " + result.Status + ": " + Path.GetFileName(result.File) + " → " + result.Template;
+                });
                 try
                 {
-                    await StaTask.Run(delegate { batch.RunBatch(jobs, cancellation.Token, ((IProgress<ReportResult>)progress).Report); return true; });
+                    await StaTask.Run(delegate
+                    {
+                        batch.RunBatch(jobs, cancellation.Token, ((IProgress<ReportResult>)progress).Report, ((IProgress<ReportJob>)starting).Report);
+                        return true;
+                    });
                     status.Text = (cancellation.IsCancellationRequested ? "Cancelled. " : "Complete. ") + results.Count(x => x.Status == "Success") + " succeeded; " +
                         results.Count(x => x.Status != "Success") + " failed; " + (jobs.Length - results.Count) + " not run. Double-click a row for its PDF or error.";
                 }
@@ -119,7 +138,7 @@ namespace EtapCrystalReporter.UI
                 finally
                 {
                     running = false; cancellation.Dispose(); cancellation = null;
-                    add.Enabled = addFolder.Enabled = addPasted.Enabled = folderPath.Enabled = remove.Enabled = start.Enabled = files.Enabled = templates.Enabled = true; cancel.Enabled = false;
+                    add.Enabled = addFolder.Enabled = addPasted.Enabled = folderPath.Enabled = remove.Enabled = start.Enabled = files.Enabled = templates.Enabled = hideSerialNumber.Enabled = true; cancel.Enabled = false;
                 }
             };
             FormClosing += delegate(object sender, FormClosingEventArgs e)
