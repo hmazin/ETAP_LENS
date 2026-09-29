@@ -128,7 +128,12 @@ namespace EtapCrystalReporter.UI
                 {
                     await StaTask.Run(delegate
                     {
-                        batch.RunBatch(jobs, cancellation.Token, ((IProgress<ReportResult>)progress).Report, ((IProgress<ReportJob>)starting).Report);
+                        // Isolated, not in-process: some studies crash the native Crystal
+                        // engine during export with nothing catchable - binding completes,
+                        // export never returns. Running each report in its own child
+                        // process means that crash only loses that one report.
+                        batch.RunBatchIsolated(jobs, cancellation.Token, ((IProgress<ReportResult>)progress).Report,
+                            Application.ExecutablePath, TimeSpan.FromMinutes(5), ((IProgress<ReportJob>)starting).Report);
                         return true;
                     });
                     status.Text = (cancellation.IsCancellationRequested ? "Cancelled. " : "Complete. ") + results.Count(x => x.Status == "Success") + " succeeded; " +

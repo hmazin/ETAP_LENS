@@ -229,6 +229,38 @@ internal static class Tests
                     r => events.Add("done:" + r.Status), j => events.Add("start"));
                 Equal("start,done:Success,start,done:Success", string.Join(",", events));
             });
+            Test("RunIsolated round-trips a job through the real app's --run-job worker", delegate
+            {
+                string exeDir = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location);
+                string mainExe = Path.Combine(exeDir, "EtapCrystalReporter.exe");
+                var service = new BatchReportService(databases, new FakeReports(), new ExportService(log), log);
+                // The dummy .rpt is placeholder text, not a real Crystal template, so the
+                // child's own CrystalReportService.Prepare fails it in the ordinary way -
+                // proving the round trip (request written, child launched, real result read
+                // back) works, without needing the Crystal runtime to succeed.
+                var job = Job(Fixture("isolated.SA2S", 3), DummyTemplate("isolated"));
+                var result = service.RunIsolated(job, mainExe, TimeSpan.FromSeconds(30));
+                Equal("Failed", result.Status);
+                True(!result.Message.Contains("did not finish")); True(!result.Message.Contains("stopped unexpectedly"));
+            });
+            Test("RunIsolated reports a clear failure when the worker exits without a result", delegate
+            {
+                string exeDir = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location);
+                string misbehavingWorker = Path.Combine(exeDir, "EtapCrystalReporter.Tests.exe"); // doesn't handle --run-job
+                var service = new BatchReportService(databases, new FakeReports(), new ExportService(log), log);
+                var job = Job(Fixture("crash.SA2S", 3), DummyTemplate("crash"));
+                var result = service.RunIsolated(job, misbehavingWorker, TimeSpan.FromSeconds(30));
+                Equal("Failed", result.Status); True(result.Message.Contains("stopped unexpectedly"));
+            });
+            Test("RunIsolated reports a clear failure when the worker doesn't finish in time", delegate
+            {
+                string exeDir = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location);
+                string mainExe = Path.Combine(exeDir, "EtapCrystalReporter.exe");
+                var service = new BatchReportService(databases, new FakeReports(), new ExportService(log), log);
+                var job = Job(Fixture("slow.SA2S", 3), DummyTemplate("slow"));
+                var result = service.RunIsolated(job, mainExe, TimeSpan.FromMilliseconds(1));
+                Equal("Failed", result.Status); True(result.Message.Contains("did not finish"));
+            });
             Test("A job's Headers (e.g. hide serial number) reach Prepare through the batch pipeline", delegate
             {
                 var fake = new FakeReports();
@@ -327,6 +359,19 @@ internal static class Tests
             var service = new BatchReportService(new EtapDatabaseService(logger), new CrystalReportService(runtime, logger), new ExportService(logger), logger);
             var headers = args.Length > 4 && args[4] == "hide-sn" ? new Dictionary<string, string> { { "sn", null } } : null;
             var result = service.Run(new ReportJob { SourcePath = args[1], Template = TemplateCatalog.Load(args[2]), OutputDirectory = args[3], Headers = headers });
+            Console.WriteLine(json.Serialize(result)); return result.Status == "Success" ? 0 : 1;
+        }
+        if (args[0] == "--report-isolated")
+        {
+            // Same as --report but through RunIsolated, against the real app exe sitting
+            // next to this one - used to verify a report that crashes the native Crystal
+            // engine in-process is contained to its own child instead of taking this
+            // process (or the GUI's) down.
+            var logger = new Logger(Path.Combine(args[3], "Logs"));
+            var service = new BatchReportService(new EtapDatabaseService(logger), null, null, logger);
+            string mainExe = Path.Combine(Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location), "EtapCrystalReporter.exe");
+            var result = service.RunIsolated(new ReportJob { SourcePath = args[1], Template = TemplateCatalog.Load(args[2]), OutputDirectory = args[3] },
+                mainExe, TimeSpan.FromMinutes(5));
             Console.WriteLine(json.Serialize(result)); return result.Status == "Success" ? 0 : 1;
         }
         if (args[0] == "--batch")

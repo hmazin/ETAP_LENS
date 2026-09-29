@@ -1,7 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Threading;
+using System.Web.Script.Serialization;
 using EtapCrystalReporter.Models;
 using EtapCrystalReporter.Utilities;
 
@@ -80,6 +83,68 @@ namespace EtapCrystalReporter.Services
                 if (cancellation.IsCancellationRequested) break;
                 if (starting != null) starting(job);
                 progress(Run(job));
+            }
+        }
+
+        // Runs one job in a separate child process (workerExecutablePath --run-job ...,
+        // handled by Program.RunJob) instead of in-process. Some studies crash the native
+        // Crystal engine during export with no catchable .NET exception - binding
+        // completes, PDF export never returns, the whole process just dies. Isolating each
+        // report this way means that crash only kills its own child; the caller and the
+        // rest of the batch are unaffected. The cost is a fresh Crystal engine cold start
+        // per report (tens of seconds) instead of once for the whole batch.
+        public ReportResult RunIsolated(ReportJob job, string workerExecutablePath, TimeSpan timeout)
+        {
+            var result = new ReportResult { File = job.SourcePath, Template = job.Template.Name, Study = "Unknown", Status = "Failed", Output = "" };
+            string requestPath = Path.GetTempFileName();
+            string resultPath = Path.GetTempFileName();
+            try
+            {
+                var request = new WorkerRequest { SourcePath = job.SourcePath, TemplatePath = job.Template.Path,
+                    OutputDirectory = job.OutputDirectory, Timestamp = job.Timestamp, Headers = job.Headers };
+                File.WriteAllText(requestPath, new JavaScriptSerializer().Serialize(request));
+                var info = new ProcessStartInfo(workerExecutablePath, "--run-job \"" + requestPath + "\" \"" + resultPath + "\"")
+                { UseShellExecute = false, CreateNoWindow = true };
+                using (var process = Process.Start(info))
+                {
+                    bool exited = process.WaitForExit((int)timeout.TotalMilliseconds);
+                    if (!exited)
+                    {
+                        try { process.Kill(); } catch { }
+                        result.Message = "The report generator did not finish within " + (int)timeout.TotalMinutes + " minute(s) and was stopped.";
+                        log.Write("report.worker_timeout", new { source = job.SourcePath, template = job.Template.Path });
+                        return result;
+                    }
+                    if (!File.Exists(resultPath) || new FileInfo(resultPath).Length == 0)
+                    {
+                        result.Message = "The report generator process stopped unexpectedly while rendering this report (exit code " + process.ExitCode +
+                            "). This is a native Crystal Reports engine failure for this specific study, not an application error.";
+                        log.Write("report.worker_crashed", new { source = job.SourcePath, template = job.Template.Path, exitCode = process.ExitCode });
+                        return result;
+                    }
+                    return new JavaScriptSerializer().Deserialize<ReportResult>(File.ReadAllText(resultPath));
+                }
+            }
+            catch (Exception ex)
+            {
+                result.Message = "Could not start the isolated report worker: " + ex.Message;
+                return result;
+            }
+            finally
+            {
+                try { if (File.Exists(requestPath)) File.Delete(requestPath); } catch { }
+                try { if (File.Exists(resultPath)) File.Delete(resultPath); } catch { }
+            }
+        }
+
+        public void RunBatchIsolated(IEnumerable<ReportJob> jobs, CancellationToken cancellation, Action<ReportResult> progress,
+            string workerExecutablePath, TimeSpan timeout, Action<ReportJob> starting = null)
+        {
+            foreach (var job in jobs)
+            {
+                if (cancellation.IsCancellationRequested) break;
+                if (starting != null) starting(job);
+                progress(RunIsolated(job, workerExecutablePath, timeout));
             }
         }
     }

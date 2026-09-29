@@ -58,6 +58,19 @@ namespace EtapCrystalReporter.Models
         public Dictionary<string, string> Headers { get; set; }
     }
 
+    // What a --run-job child process needs to reconstruct one ReportJob. Deliberately
+    // just the primitive fields (not a serialized ReportTemplate/TemplateOptions) - the
+    // child reloads the template's .rpt.json sidecar fresh from TemplatePath itself,
+    // same as BatchReportService.Run already does for in-process jobs.
+    public sealed class WorkerRequest
+    {
+        public string SourcePath { get; set; }
+        public string TemplatePath { get; set; }
+        public string OutputDirectory { get; set; }
+        public bool Timestamp { get; set; }
+        public Dictionary<string, string> Headers { get; set; }
+    }
+
     public sealed class ReportResult
     {
         public string File { get; set; }
