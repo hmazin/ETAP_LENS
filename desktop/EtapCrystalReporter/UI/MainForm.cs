@@ -20,6 +20,8 @@ namespace EtapCrystalReporter.UI
         private readonly CheckBox openPdf = new CheckBox { Text = "Open PDF after generation", AutoSize = true };
         private readonly CheckBox timestamp = new CheckBox { Text = "Include timestamp in filename", AutoSize = true };
         private readonly CheckBox hideSerialNumber = new CheckBox { Text = "Hide serial number", AutoSize = true };
+        private readonly RadioButton preferSummary = new RadioButton { Text = "Prefer Summary", AutoSize = true };
+        private readonly RadioButton preferComplete = new RadioButton { Text = "Prefer Complete", AutoSize = true };
         private readonly ToolStripStatusLabel status = new ToolStripStatusLabel { Text = "Ready" };
         private readonly TableLayoutPanel layout;
         private readonly AppSettings settings;
@@ -64,8 +66,11 @@ namespace EtapCrystalReporter.UI
             AddRow("Output Folder", output, Ui.Button("Browse…", delegate { output.Text = Ui.Folder(this, output.Text); }), 3);
             output.Text = settings.OutputDirectory; openPdf.Checked = settings.OpenPdf; timestamp.Checked = settings.Timestamp;
             hideSerialNumber.Checked = settings.HideSerialNumber;
+            preferComplete.Checked = settings.PreferredReportKind.Equals("complete", StringComparison.OrdinalIgnoreCase);
+            preferSummary.Checked = !preferComplete.Checked;
             var options = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, Padding = new Padding(0, 8, 0, 8) };
             options.Controls.Add(openPdf); options.Controls.Add(timestamp); options.Controls.Add(hideSerialNumber);
+            options.Controls.Add(preferSummary); options.Controls.Add(preferComplete);
             layout.Controls.Add(options, 1, 4); layout.SetColumnSpan(options, 2);
             var actions = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill };
             actions.Controls.Add(Ui.Button("Preview Report", Preview));
@@ -75,7 +80,7 @@ namespace EtapCrystalReporter.UI
                 try
                 {
                     SaveSettings();
-                    using (var form = new BatchForm(template.Items.Cast<ReportTemplate>().ToList(), batch, output.Text, timestamp.Checked, Headers())) form.ShowDialog(this);
+                    using (var form = new BatchForm(template.Items.Cast<ReportTemplate>().ToList(), batch, output.Text, timestamp.Checked, Headers(), PreferredKind())) form.ShowDialog(this);
                 }
                 catch (Exception ex) { Ui.Error(this, ex); }
             }));
@@ -137,7 +142,8 @@ namespace EtapCrystalReporter.UI
                 status.Text = "Database validated.";
                 if (info.StudyType.HasValue)
                 {
-                    var match = template.Items.Cast<ReportTemplate>().FirstOrDefault(t => t.Options.StudyTypes.Contains(info.StudyType.Value));
+                    var candidates = template.Items.Cast<ReportTemplate>().Where(t => t.Options.StudyTypes.Contains(info.StudyType.Value)).ToList();
+                    var match = candidates.FirstOrDefault(t => TemplateCatalog.MatchesKind(t, PreferredKind())) ?? candidates.FirstOrDefault();
                     if (match != null) { template.SelectedItem = match; status.Text = "Database validated. Recommended template selected."; }
                     else status.Text = "Database validated. No template in your library declares StudyTypes for " + info.StudyName + " — pick one manually.";
                 }
@@ -154,8 +160,11 @@ namespace EtapCrystalReporter.UI
             if (string.IsNullOrWhiteSpace(output.Text)) throw new ArgumentException("Select an output folder.");
             settings.OutputDirectory = Path.GetFullPath(output.Text.Trim());
             settings.OpenPdf = openPdf.Checked; settings.Timestamp = timestamp.Checked;
-            settings.HideSerialNumber = hideSerialNumber.Checked; settings.Save();
+            settings.HideSerialNumber = hideSerialNumber.Checked;
+            settings.PreferredReportKind = PreferredKind(); settings.Save();
         }
+
+        private string PreferredKind() { return preferComplete.Checked ? "complete" : "summary"; }
 
         private ReportJob Job()
         {

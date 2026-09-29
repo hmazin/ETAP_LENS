@@ -8,10 +8,12 @@ namespace EtapCrystalReporter.Utilities
 {
     public static class FileValidator
     {
+        public static readonly string[] StudyExtensions = { ".sa1s", ".sa2s", ".ul1s" };
+
         public static string CopyStudy(string source, string destination)
         {
             string extension = Path.GetExtension(source);
-            if (!new[] { ".sa1s", ".sa2s", ".ul1s" }.Contains(extension, StringComparer.OrdinalIgnoreCase))
+            if (!StudyExtensions.Contains(extension, StringComparer.OrdinalIgnoreCase))
                 throw new InvalidDataException("Select an ETAP .SA1S, .SA2S, or .UL1S result file.");
             // We never open the source with SQLite: even read-only SQLite can touch WAL sidecars.
             using (var input = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read))

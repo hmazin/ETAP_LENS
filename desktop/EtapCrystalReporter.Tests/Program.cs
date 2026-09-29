@@ -185,6 +185,31 @@ internal static class Tests
                 using (var fake = new FakeSession(true)) Throws<IOException>(() => new ExportService(log).Export(fake, job, new EtapStudyInfo()));
                 True(!Directory.EnumerateFiles(job.OutputDirectory, ".etap-*").Any());
             });
+            Test("MatchesKind identifies the one overview template by filename, not folder", delegate
+            {
+                string summary = Path.Combine(root, "Summary.rpt"); File.WriteAllText(summary, "fixture");
+                string variant = Path.Combine(root, "Momentary Duty-Complete.rpt"); File.WriteAllText(variant, "fixture");
+                True(TemplateCatalog.MatchesKind(TemplateCatalog.Load(summary), "summary"));
+                True(!TemplateCatalog.MatchesKind(TemplateCatalog.Load(variant), "summary"));
+                True(!TemplateCatalog.MatchesKind(TemplateCatalog.Load(summary), "complete"));
+            });
+            Test("MatchJobs pairs each file only with templates declaring a matching StudyType", delegate
+            {
+                string duty = Path.Combine(root, "duty.rpt"); File.WriteAllText(duty, "fixture");
+                File.WriteAllText(duty + ".json", "{\"StudyTypes\":[1]}");
+                string fault = Path.Combine(root, "fault.rpt"); File.WriteAllText(fault, "fixture");
+                File.WriteAllText(fault + ".json", "{\"StudyTypes\":[3,4,5]}");
+                string universal = Path.Combine(root, "universal.rpt"); File.WriteAllText(universal, "fixture");
+                var candidates = new[] { TemplateCatalog.Load(duty), TemplateCatalog.Load(fault), TemplateCatalog.Load(universal) };
+                string sc1 = Fixture("match-1.SA1S", 1);
+                string sc5 = Fixture("match-5.SA2S", 5);
+                string bad = Path.Combine(root, "unreadable.SA1S"); File.WriteAllText(bad, "not a database");
+                var service = new BatchReportService(databases, new FakeReports(), new ExportService(log), log);
+                var jobs = service.MatchJobs(new[] { sc1, sc5, bad }, candidates, root, false);
+                Equal(2, jobs.Count(j => j.SourcePath == sc1));       // duty (StudyType 1) + universal
+                Equal(2, jobs.Count(j => j.SourcePath == sc5));       // fault (StudyType 5) + universal
+                Equal(3, jobs.Count(j => j.SourcePath == bad));       // undetectable: tried against everything
+            });
             Test("Batch continues after failure and honors cancellation between jobs", delegate
             {
                 var service = new BatchReportService(databases, new FakeReports(), new ExportService(log), log);
@@ -304,6 +329,25 @@ internal static class Tests
             var jobs = Directory.EnumerateFiles(args[1]).Where(x => new[] { ".sa1s", ".sa2s" }.Contains(Path.GetExtension(x).ToLowerInvariant()))
                 .OrderByDescending(x => Path.GetExtension(x).Equals(".sa1s", StringComparison.OrdinalIgnoreCase))
                 .Select(x => new ReportJob { SourcePath = x, Template = template, OutputDirectory = args[3] });
+            bool success = true;
+            return StaTask.Run(delegate
+            {
+                service.RunBatch(jobs, CancellationToken.None, result => { Console.WriteLine(json.Serialize(result)); if (result.Status != "Success") success = false; });
+                return success ? 0 : 1;
+            }).GetAwaiter().GetResult();
+        }
+        if (args[0] == "--auto-batch")
+        {
+            // Mirrors BatchForm: scan a folder of mixed result files, scan a folder of
+            // templates, auto-match by detected StudyType, run everything that matches.
+            var runtime = new CrystalRuntime();
+            var logger = new Logger(Path.Combine(args[3], "Logs"));
+            var service = new BatchReportService(new EtapDatabaseService(logger), new CrystalReportService(runtime, logger), new ExportService(logger), logger);
+            var paths = FileValidator.StudyExtensions
+                .SelectMany(ext => Directory.EnumerateFiles(args[1], "*" + ext, SearchOption.AllDirectories)).ToArray();
+            var candidates = TemplateCatalog.Scan(args[2], Console.Error.WriteLine);
+            var jobs = service.MatchJobs(paths, candidates, args[3], false);
+            Console.Error.WriteLine(paths.Length + " file(s), " + candidates.Count + " template(s) -> " + jobs.Length + " matched job(s).");
             bool success = true;
             return StaTask.Run(delegate
             {

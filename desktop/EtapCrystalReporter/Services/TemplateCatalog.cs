@@ -46,6 +46,13 @@ namespace EtapCrystalReporter.Services
             return new ReportTemplate { Path = path, Name = name ?? Path.GetFileNameWithoutExtension(path), Options = options };
         }
 
+        // True for the template literally named Summary.rpt or Complete.rpt within its
+        // family - the one overview report, as opposed to every specialized variant
+        // (Momentary/Interrupting Duty, Alerts, LG/LL/LLG, Bus/Branch Loading, ...)
+        // that happens to also sit under a Summary/ or Complete/ folder.
+        public static bool MatchesKind(ReportTemplate template, string kind)
+        { return Path.GetFileNameWithoutExtension(template.Path).Equals(kind, StringComparison.OrdinalIgnoreCase); }
+
         public static void ValidateStudy(ReportTemplate template, EtapStudyInfo info)
         {
             if (template.Options.StudyTypes.Length > 0 && (!info.StudyType.HasValue || !template.Options.StudyTypes.Contains(info.StudyType.Value)))

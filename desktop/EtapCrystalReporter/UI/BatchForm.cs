@@ -2,8 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Drawing;
+using System.IO;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 using EtapCrystalReporter.Models;
 using EtapCrystalReporter.Services;
@@ -21,17 +23,22 @@ namespace EtapCrystalReporter.UI
         private bool running;
 
         public BatchForm(IList<ReportTemplate> catalog, BatchReportService batch, string outputDirectory, bool timestamp,
-            Dictionary<string, string> headers = null)
+            Dictionary<string, string> headers = null, string preferredKind = "summary")
         {
             Ui.Style(this);
             Text = "Batch Reports";
             Size = new Size(1100, 750); MinimumSize = new Size(850, 550);
-            foreach (var template in catalog) templates.Items.Add(template);
+            // Default to just the one overview report per family (matching MainForm's
+            // "Prefer Summary/Complete" setting), not every specialized variant - the
+            // user can still check more manually.
+            foreach (var template in catalog)
+                templates.Items.Add(template, TemplateCatalog.MatchesKind(template, preferredKind));
             var root = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(12), RowCount = 5, ColumnCount = 2 };
             root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55)); root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45));
             root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); root.RowStyles.Add(new RowStyle(SizeType.Percent, 35));
             root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); root.RowStyles.Add(new RowStyle(SizeType.Percent, 65)); root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            root.Controls.Add(Ui.Label("ETAP result files"), 0, 0); root.Controls.Add(Ui.Label("Templates — every checked template is attempted for each file"), 1, 0);
+            root.Controls.Add(Ui.Label("ETAP result files"), 0, 0);
+            root.Controls.Add(Ui.Label("Templates — only the ones matching each file's detected study type are used"), 1, 0);
             root.Controls.Add(files, 0, 1); root.Controls.Add(templates, 1, 1);
             var actions = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill };
             var add = Ui.Button("Add files…", delegate
@@ -41,11 +48,23 @@ namespace EtapCrystalReporter.UI
                         foreach (string path in dialog.FileNames)
                             if (!files.Items.Cast<string>().Contains(path, StringComparer.OrdinalIgnoreCase)) files.Items.Add(path);
             });
+            var addFolder = Ui.Button("Add folder…", delegate
+            {
+                string folder = Ui.Folder(this, "");
+                if (string.IsNullOrEmpty(folder)) return;
+                var found = Directory.EnumerateFiles(folder, "*", SearchOption.AllDirectories)
+                    .Where(p => FileValidator.StudyExtensions.Contains(Path.GetExtension(p), StringComparer.OrdinalIgnoreCase))
+                    .OrderBy(p => p, StringComparer.OrdinalIgnoreCase).ToArray();
+                foreach (string path in found)
+                    if (!files.Items.Cast<string>().Contains(path, StringComparer.OrdinalIgnoreCase)) files.Items.Add(path);
+                status.Text = found.Length == 0 ? "No .SA1S/.SA2S/.UL1S files found under that folder." :
+                    "Added " + found.Length + " result file(s) from " + folder + ".";
+            });
             var remove = Ui.Button("Remove selected", delegate { foreach (var item in files.SelectedItems.Cast<string>().ToArray()) files.Items.Remove(item); });
             var start = Ui.Button("Generate PDFs", null);
             var cancel = Ui.Button("Cancel after current", delegate { if (cancellation != null) { cancellation.Cancel(); status.Text = "Cancelling after the current report finishes…"; } });
             cancel.Enabled = false;
-            actions.Controls.AddRange(new Control[] { add, remove, start, cancel });
+            actions.Controls.AddRange(new Control[] { add, addFolder, remove, start, cancel });
             root.Controls.Add(actions, 0, 2); root.SetColumnSpan(actions, 2);
             var grid = new DataGridView { Dock = DockStyle.Fill, ReadOnly = true, AllowUserToAddRows = false, AllowUserToDeleteRows = false,
                 AutoGenerateColumns = true, AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill, DataSource = results, RowHeadersVisible = false };
@@ -63,10 +82,18 @@ namespace EtapCrystalReporter.UI
             {
                 if (files.Items.Count == 0 || templates.CheckedItems.Count == 0)
                 { Ui.Error(this, new ArgumentException("Select at least one file and one template.")); return; }
-                var jobs = (from string path in files.Items from ReportTemplate template in templates.CheckedItems
-                    select new ReportJob { SourcePath = path, Template = template, OutputDirectory = outputDirectory, Timestamp = timestamp, Headers = headers }).ToArray();
                 running = true; cancellation = new CancellationTokenSource(); results.Clear();
-                add.Enabled = remove.Enabled = start.Enabled = files.Enabled = templates.Enabled = false; cancel.Enabled = true;
+                add.Enabled = addFolder.Enabled = remove.Enabled = start.Enabled = files.Enabled = templates.Enabled = false; cancel.Enabled = true;
+                status.Text = "Matching " + files.Items.Count + " file(s) to compatible templates…";
+                var paths = files.Items.Cast<string>().ToArray();
+                var checkedTemplates = templates.CheckedItems.Cast<ReportTemplate>().ToArray();
+                var jobs = await Task.Run(() => batch.MatchJobs(paths, checkedTemplates, outputDirectory, timestamp, headers));
+                if (jobs.Length == 0)
+                {
+                    status.Text = "No checked template matches any selected file's detected study type.";
+                    running = false; add.Enabled = addFolder.Enabled = remove.Enabled = start.Enabled = files.Enabled = templates.Enabled = true; cancel.Enabled = false;
+                    return;
+                }
                 status.Text = "Generating " + jobs.Length + " reports…";
                 // Progress callbacks run on the UI thread. The SDK itself stays on one STA worker.
                 var progress = new Progress<ReportResult>(result => { results.Add(result); status.Text = results.Count + " / " + jobs.Length + " — " + result.Status; });
@@ -80,7 +107,7 @@ namespace EtapCrystalReporter.UI
                 finally
                 {
                     running = false; cancellation.Dispose(); cancellation = null;
-                    add.Enabled = remove.Enabled = start.Enabled = files.Enabled = templates.Enabled = true; cancel.Enabled = false;
+                    add.Enabled = addFolder.Enabled = remove.Enabled = start.Enabled = files.Enabled = templates.Enabled = true; cancel.Enabled = false;
                 }
             };
             FormClosing += delegate(object sender, FormClosingEventArgs e)
